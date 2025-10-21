@@ -53,7 +53,11 @@ void Lvgl_Init(void) {
   disp_drv.draw_buf = &draw_buf;
   lv_disp_drv_register(&disp_drv);
 
-  /*Initialize the (dummy) input device driver*/
+  
+  // Optional: rotate via LVGL API if needed
+  // lv_disp_t *disp = lv_disp_get_default();
+  // lv_disp_set_rotation(disp, LV_DISP_ROT_90);
+/*Initialize the (dummy) input device driver*/
   static lv_indev_drv_t indev_drv;
   lv_indev_drv_init(&indev_drv);
   indev_drv.type = LV_INDEV_TYPE_POINTER;
@@ -72,6 +76,9 @@ void Lvgl_Init(void) {
   esp_timer_handle_t lvgl_tick_timer = NULL;
   esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer);
   esp_timer_start_periodic(lvgl_tick_timer, EXAMPLE_LVGL_TICK_PERIOD_MS * 1000);
+
+  // lv_disp_t *disp = lv_disp_get_default();
+  // lv_disp_set_rotation(disp, LV_DISP_ROT_90);
 }
 void Timer_Loop(void) {
   lv_timer_handler(); /* let the GUI do its work */

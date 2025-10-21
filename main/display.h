@@ -1,8 +1,8 @@
 #pragma once
 #include <Arduino.h>
 #include <SPI.h>
-#define LCD_WIDTH   172 //LCD width
-#define LCD_HEIGHT  320 //LCD height
+#define LCD_WIDTH   320 //LCD width
+#define LCD_HEIGHT  172 //LCD height
 
 #define SPIFreq                        80000000
 #define EXAMPLE_PIN_NUM_MISO           5
@@ -18,8 +18,8 @@
 #define VERTICAL   0
 #define HORIZONTAL 1
 
-#define Offset_X 34
-#define Offset_Y 0
+#define Offset_X 0
+#define Offset_Y 34
 
 
 void LCD_SetCursor(uint16_t x1, uint16_t y1, uint16_t x2,uint16_t y2);

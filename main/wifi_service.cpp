@@ -3,8 +3,8 @@
 #include <WiFi.h>
 #include "ui_globals.h"
 
-const char *DEFAULT_SSID     = "Anton_2.4";
-const char *DEFAULT_PASSWORD = "0526626387";
+const char *DEFAULT_SSID     = "";
+const char *DEFAULT_PASSWORD = "";
 
 void initWifi(const char *ssid, const char *password) {
   WiFi.mode(WIFI_STA);

@@ -6,7 +6,7 @@
 #include <esp_heap_caps.h>
 #include "display.h"
 
-#define LVGL_WIDTH    (LCD_WIDTH )
+#define LVGL_WIDTH    (LCD_WIDTH)
 #define LVGL_HEIGHT   LCD_HEIGHT
 #define LVGL_BUF_LEN  (LVGL_WIDTH * LVGL_HEIGHT / 20)
 

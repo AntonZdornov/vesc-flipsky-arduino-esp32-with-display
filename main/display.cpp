@@ -63,7 +63,7 @@ void LCD_Init(void) {
   delay(120);
   LCD_WriteCommand(0x36);
   if (HORIZONTAL)
-    LCD_WriteData(0xC0);  // 0x00 → 0xC0 (зеркало X и Y)
+    LCD_WriteData(0x60);  // 0x00 → 0xC0 (зеркало X и Y)
   else
     LCD_WriteData(0xA0);
 
