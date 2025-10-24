@@ -50,6 +50,34 @@ void LCD_Reset(void) {
   digitalWrite(EXAMPLE_PIN_NUM_LCD_RST, HIGH);
   delay(50);
 }
+
+static inline void LCD_WriteBytes(const uint8_t* data, uint32_t len) {
+  SPI.beginTransaction(SPISettings(SPIFreq, MSBFIRST, SPI_MODE0));
+  digitalWrite(EXAMPLE_PIN_NUM_LCD_CS, LOW);
+  digitalWrite(EXAMPLE_PIN_NUM_LCD_DC, HIGH);
+
+  // Пишем последовательно; максимально совместимо
+  while (len--) {
+    SPI.transfer(*data++);
+  }
+
+  digitalWrite(EXAMPLE_PIN_NUM_LCD_CS, HIGH);
+  SPI.endTransaction();
+}
+
+void LCD_FillScreen(uint16_t color) {  // убираем 'static' чтобы совпадало с заголовком
+    const uint16_t W = 320;  // или используй твои макросы LCD_LOGICAL_W
+    const uint16_t H = 172;  // или LCD_LOGICAL_H
+
+    static uint16_t line[320];
+    for (uint16_t i = 0; i < W; ++i) line[i] = color;
+
+    for (uint16_t y = 0; y < H; ++y) {
+        LCD_SetCursor(0, y, W - 1, y);
+        LCD_WriteBytes((const uint8_t*)line, W * sizeof(uint16_t)); // правильная функция
+    }
+}
+
 void LCD_Init(void) {
   pinMode(EXAMPLE_PIN_NUM_LCD_CS, OUTPUT);
   pinMode(EXAMPLE_PIN_NUM_LCD_DC, OUTPUT);
@@ -141,11 +169,14 @@ void LCD_Init(void) {
   LCD_WriteData(0x29);
   LCD_WriteData(0x32);
 
-  LCD_WriteCommand(0x21);
+  LCD_WriteCommand(0x21); // заменил инверсию чтобы убрать
+  // LCD_WriteCommand(0x20); // инверсия
 
   LCD_WriteCommand(0x11);
   delay(120);
   LCD_WriteCommand(0x29);
+
+  
 }
 /******************************************************************************
 function: Set the cursor position
@@ -215,12 +246,10 @@ void LCD_addWindow(uint16_t Xstart, uint16_t Ystart, uint16_t Xend, uint16_t Yen
 // backlight
 void Backlight_Init(void) {
   ledcAttach(EXAMPLE_PIN_NUM_BK_LIGHT, Frequency, Resolution);
-  ledcWrite(EXAMPLE_PIN_NUM_BK_LIGHT, 60);
+  ledcWrite(EXAMPLE_PIN_NUM_BK_LIGHT, 90);
 }
 
-void Set_Backlight(uint8_t Light)  //
-{
-
+void Set_Backlight(uint8_t Light) {
   if (Light > 100 || Light < 0)
     printf("Set Backlight parameters in the range of 0 to 100 \r\n");
   else {
