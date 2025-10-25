@@ -7,6 +7,9 @@
 #include "utils.h"
 #include "ui_globals.h"
 #include <lvgl.h>
+#include <Preferences.h>
+
+Preferences prefs;
 
 unsigned long lastFetch = 0;
 
@@ -15,6 +18,8 @@ static lv_obj_t *lbl_volt = NULL;
 static lv_obj_t *lbl_speed = NULL;
 static lv_obj_t *lbl_temp = NULL;
 static lv_obj_t *lbl_temp_val = NULL;
+static lv_obj_t *lbl_tachometer = NULL;
+static lv_obj_t *lbl_tachometerAbs = NULL;
 static lv_obj_t *lbl_debbug = NULL;
 
 
@@ -22,68 +27,102 @@ extern const lv_font_t lv_font_montserrat_48;
 extern const lv_font_t lv_font_montserrat_38;
 extern const lv_font_t lv_font_montserrat_22;
 extern const lv_font_t lv_font_montserrat_18;
+extern const lv_font_t lv_font_montserrat_14;
 extern const lv_font_t lv_font_montserrat_12;
 
+#define POLE_PAIRS 15  // обычно 7 для 14-полюсного мотора
+#define WHEEL_DIAMETER_M 0.255
+#define WHEEL_CIRC_M (3.1415926f * WHEEL_DIAMETER_M)  // окружность в метрах
+#define TACHO_COUNTS_PER_REV 8192.0f
+// ВКЛ/ВЫКЛ режима лимита (можно переключать кнопкой)
+static bool limit25_enabled = true;
+static const float TARGET_KMH = 25.0f;  // лимит скорости
+
+#define BTN_PIN 0
 #define VESC_RX_PIN 3  // VESC RX
 #define VESC_TX_PIN 2  // VESC TX
 #define BAUD 115200
 HardwareSerial VSerial(1);  // создаём второй UART
 VescUart UART;
 
-#define POLE_PAIRS 15  // обычно 7 для 14-полюсного мотора
-#define WHEEL_DIAMETER_M 0.255
-#define WHEEL_CIRC_M (3.1415926f * WHEEL_DIAMETER_M)
-
 void ui_build(void) {
   // lv_obj_clean(lv_scr_act());
   // lv_refr_now(NULL);
 
   // Корневой контейнер на весь экран (у тебя 320x172)
-  lv_obj_t *body = lv_obj_create(lv_scr_act());
+  lv_obj_t *root = lv_obj_create(lv_scr_act());
+  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
   // lv_disp_t *d = lv_disp_get_default();
   // lv_obj_set_size(root, lv_disp_get_hor_res(d), lv_disp_get_ver_res(d));
-  lv_obj_set_size(body, LV_PCT(100), LV_PCT(100));
-  lv_obj_set_style_pad_all(body, 2, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(body, lv_color_black(), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(body, LV_OPA_COVER, LV_PART_MAIN);
-  // lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
-
+  lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
+  lv_obj_set_style_pad_all(root, 2, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(root, lv_color_black(), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(root, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_opa(root, LV_OPA_TRANSP, LV_PART_MAIN);
   // Горизонтальный флекс: 3 колонки
-  // lv_obj_set_layout(root, LV_LAYOUT_FLEX);
-  // lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
-  // lv_obj_set_flex_align(root,
-  //                       LV_FLEX_ALIGN_START,    // по X
-  //                       LV_FLEX_ALIGN_CENTER,   // по Y
-  //                       LV_FLEX_ALIGN_CENTER);  // между линиями
+  lv_obj_set_layout(root, LV_LAYOUT_FLEX);
+  lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(root,
+                        LV_FLEX_ALIGN_CENTER,   // по X
+                        LV_FLEX_ALIGN_CENTER,   // по Y
+                        LV_FLEX_ALIGN_CENTER);  // между линиями
 
-  // lv_obj_t *body = lv_obj_create(root);
-
+  lv_obj_t *body = lv_obj_create(root);
+  lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_border_opa(body, LV_OPA_TRANSP, LV_PART_MAIN);
+  // lv_obj_set_style_outline_opa(body, LV_OPA_TRANSP, LV_PART_MAIN);
+  // lv_obj_set_style_shadow_opa(body, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_size(body, LV_PCT(100), LV_PCT(80));
+  lv_obj_set_style_pad_all(body, 0, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(body, lv_color_black(), LV_PART_MAIN);
   lv_obj_set_layout(body, LV_LAYOUT_FLEX);
   lv_obj_set_flex_flow(body, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(body,
-                        LV_FLEX_ALIGN_START,    // по X
-                        LV_FLEX_ALIGN_CENTER,   // по Y
-                        LV_FLEX_ALIGN_CENTER); 
+                        LV_FLEX_ALIGN_CENTER,  // по X
+                        LV_FLEX_ALIGN_CENTER,  // по Y
+                        LV_FLEX_ALIGN_CENTER);
 
-  // lv_obj_t *footer = lv_obj_create(root);
-  //   lv_obj_set_style_bg_opa(footer, LV_OPA_TRANSP, 0);
-  // lv_obj_set_style_border_width(footer, 0, LV_PART_MAIN);
-  // lv_obj_set_style_pad_all(footer, 0, 0);
-  // lv_obj_set_size(footer, LV_SIZE_CONTENT, LV_PCT(100));
-  // lbl_debbug = lv_label_create(footer);
-  // lv_label_set_text(lbl_debbug, "Debbuger:");
-  // lv_obj_set_style_text_color(lbl_debbug, lv_color_white(), 0);
-  // lv_obj_set_style_text_font(lbl_debbug, &lv_font_montserrat_12, 0);
-  // lv_obj_set_width(lbl_debbug, LV_PCT(100));
-  // lv_obj_set_style_text_align(lbl_debbug, LV_TEXT_ALIGN_CENTER, 0);
-  
+  lv_obj_t *footer = lv_obj_create(root);
+  lv_obj_set_style_bg_opa(footer, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(footer, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(footer, 4, 0);
+  lv_obj_set_size(footer, LV_PCT(100), LV_PCT(20));
+  lv_obj_set_layout(footer, LV_LAYOUT_FLEX);
+  lv_obj_set_flex_flow(footer, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(footer,
+                        LV_FLEX_ALIGN_START,   // по X
+                        LV_FLEX_ALIGN_CENTER,  // по Y
+                        LV_FLEX_ALIGN_CENTER);
+
+  if (DEBUG_MODE == 1) {
+    lbl_debbug = lv_label_create(footer);
+    lv_label_set_text(lbl_debbug, "Debug mode:");
+    lv_obj_set_style_text_color(lbl_debbug, lv_color_make(255, 0, 0), 0);
+    lv_obj_set_style_text_font(lbl_debbug, &lv_font_montserrat_14, 0);
+    lv_obj_set_width(lbl_debbug, LV_PCT(100));
+    lv_obj_set_style_text_align(lbl_debbug, LV_TEXT_ALIGN_LEFT, 0);
+  } else {
+    lbl_tachometer = lv_label_create(footer);
+    lv_label_set_text(lbl_tachometer, "Trip distance: 0km");
+    lv_obj_set_style_text_color(lbl_tachometer, lv_color_white(), 0);
+    lv_obj_set_style_text_font(lbl_tachometer, &lv_font_montserrat_18, 0);
+    lv_obj_set_width(lbl_tachometer, LV_PCT(100));
+    lv_obj_set_style_text_align(lbl_tachometer, LV_TEXT_ALIGN_LEFT, 0);
+
+    // lbl_tachometerAbs = lv_label_create(footer);
+    // lv_label_set_text(lbl_tachometer, "0km");
+    // lv_obj_set_style_text_color(lbl_tachometer, lv_color_white(), 0);
+    // lv_obj_set_style_text_font(lbl_tachometer, &lv_font_montserrat_14, 0);
+    // lv_obj_set_width(lbl_tachometer, LV_PCT(100));
+    // lv_obj_set_style_text_align(lbl_tachometer, LV_TEXT_ALIGN_LEFT, 0);
+  }
 
   // ====== Колонка 1: Battery / Voltage ======
   lv_obj_t *col1 = lv_obj_create(body);
   lv_obj_set_style_bg_opa(col1, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(col1, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(col1, 0, 0);
-  lv_obj_set_size(col1, LV_SIZE_CONTENT, LV_PCT(100));
+  lv_obj_set_size(col1, LV_SIZE_CONTENT, LV_PCT(90));
   lv_obj_set_layout(col1, LV_LAYOUT_FLEX);
   lv_obj_set_flex_flow(col1, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(col1, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -110,7 +149,7 @@ void ui_build(void) {
   lv_obj_set_style_bg_opa(col2, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(col2, 0, 0);
   lv_obj_set_style_pad_all(col2, 0, 0);
-  lv_obj_set_size(col2, LV_SIZE_CONTENT, LV_PCT(100));
+  lv_obj_set_size(col2, LV_SIZE_CONTENT, LV_PCT(90));
   lv_obj_set_layout(col2, LV_LAYOUT_FLEX);
   lv_obj_set_flex_flow(col2, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(col2, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -129,7 +168,7 @@ void ui_build(void) {
   lv_obj_set_style_bg_opa(col3, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(col3, 0, 0);
   lv_obj_set_style_pad_all(col3, 0, 0);
-  lv_obj_set_size(col3, LV_SIZE_CONTENT, LV_PCT(100));
+  lv_obj_set_size(col3, LV_SIZE_CONTENT, LV_PCT(90));
   lv_obj_set_layout(col3, LV_LAYOUT_FLEX);
   lv_obj_set_flex_flow(col3, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(col3, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -172,6 +211,7 @@ void ui_set_battery(float volts) {
 void ui_set_speed(float rpm) {
   if (!lbl_speed) return;
   float speed = erpm_to_kmh(rpm, POLE_PAIRS, WHEEL_CIRC_M);  // или "%.0f km/h"
+
   char buf[16];
   int whole = (int)speed;
   int frac = (int)((speed - whole) * 10.0f);
@@ -191,8 +231,20 @@ void ui_set_temp(float celsius) {
   lv_label_set_text(lbl_temp_val, buf);
 }
 
+void ui_set_tachometer(float tachometer) {
+  if (!lbl_tachometer) return;
+  float km = ((tachometer / (POLE_PAIRS * 2 * 3)) * WHEEL_CIRC_M) / 1000.0;
+  char buf[48];
+  int whole = (int)km;                         // целая часть
+  int frac = (int)fabs((km - whole) * 10.0f);  // 1 цифра после точки
+  sprintf(buf, "Trip distance:%d.%dkm", whole, frac);
+  lv_label_set_text(lbl_tachometer, buf);
+}
+
 void setup() {
   LOG_BEGIN(BAUD);
+  prefs.begin("settings", false);
+  pinMode(BTN_PIN, INPUT_PULLUP);
   delay(200);
   LCD_Init();
   Lvgl_Init();
@@ -201,19 +253,49 @@ void setup() {
   VSerial.begin(BAUD, SERIAL_8N1, VESC_RX_PIN, VESC_TX_PIN);
   UART.setSerialPort(&VSerial);
 
+  //   prefs.putInt("counter", 42);
+  // int counter = prefs.getInt("counter", 0);
+
+  prefs.end();
   delay(200);
 }
 
 void loop() {
   Timer_Loop();
+  int state = digitalRead(BTN_PIN);  // читаем состояние
+
+  if (state == LOW) {
+    LOG_PRINTLN("Set limit: 25km/h");
+    const int erpm_limit = (int)kmh_to_erpm(TARGET_KMH);
+
+    // // 2) Получаем желаемую «скорость» с твоего источника:
+    // //    например, ручка газа → целевой eRPM (0..max_cmd)
+    // //    ниже просто пример: плавно крутим от 0 до 9k eRPM
+    // static int demo_cmd = 0;
+    // demo_cmd += 50;
+    // if (demo_cmd > 9000) demo_cmd = 0;
+    // int target_erpm = demo_cmd;
+
+    // // 3) Клемп по лимиту, если режим включён
+    // if (limit25_enabled && target_erpm > erpm_limit) {
+    //   target_erpm = erpm_limit;
+    // }
+
+    // 4) Отправляем в VESC
+    // UART.setRPM(1000);
+    UART.setDuty(0.03f);
+  }
+
   if (UART.getVescValues()) {
     float voltage = UART.data.inpVoltage;
     float temp = UART.data.tempMosfet;
     float rpm = UART.data.rpm;
+    float tachometer = UART.data.tachometer;
+    ui_set_tachometer(tachometer);
     ui_set_battery(voltage);
     ui_set_temp(temp);
     ui_set_speed(rpm);
   }
 
-  delay(500);
+  delay(200);
 }

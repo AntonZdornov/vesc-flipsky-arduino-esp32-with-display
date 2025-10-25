@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // Set 0 for disable logs
-#define DEBUG_MODE 1
+#define DEBUG_MODE 0
 
 #if DEBUG_MODE
   #define LOG_BEGIN(baud) Serial.begin(baud)

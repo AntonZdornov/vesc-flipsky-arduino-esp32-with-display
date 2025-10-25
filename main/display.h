@@ -19,7 +19,7 @@
 #define HORIZONTAL 1
 
 #define Offset_X 0
-#define Offset_Y 32
+#define Offset_Y 34
 
 
 void LCD_SetCursor(uint16_t x1, uint16_t y1, uint16_t x2,uint16_t y2);

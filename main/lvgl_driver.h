@@ -6,8 +6,8 @@
 #include <esp_heap_caps.h>
 #include "display.h"
 
-#define LVGL_WIDTH    318
-#define LVGL_HEIGHT   176
+#define LVGL_WIDTH    320
+#define LVGL_HEIGHT   172
 #define LVGL_BUF_LEN  (LVGL_WIDTH * LVGL_HEIGHT / 20)
 
 #define EXAMPLE_LVGL_TICK_PERIOD_MS  5
