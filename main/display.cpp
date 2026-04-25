@@ -246,7 +246,7 @@ void LCD_addWindow(uint16_t Xstart, uint16_t Ystart, uint16_t Xend, uint16_t Yen
 // backlight
 void Backlight_Init(void) {
   ledcAttach(EXAMPLE_PIN_NUM_BK_LIGHT, Frequency, Resolution);
-  ledcWrite(EXAMPLE_PIN_NUM_BK_LIGHT, 90);
+  ledcWrite(EXAMPLE_PIN_NUM_BK_LIGHT, 100);
 }
 
 void Set_Backlight(uint8_t Light) {
