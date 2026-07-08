@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/cmake_install.cmake",
+		"/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-build/cmake_install.cmake",
+		"/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

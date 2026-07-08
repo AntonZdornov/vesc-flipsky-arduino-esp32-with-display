@@ -1,0 +1,15 @@
+# This is a generated file and its contents are an internal implementation detail.
+# The download step will be re-executed if anything in this file changes.
+# No other meaning or use of this file is supported.
+
+method=git
+command=/opt/homebrew/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/tmp/lv_drivers-populate-gitclone.cmake
+source_dir=/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-src
+work_dir=/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps
+repository=https://github.com/lvgl/lv_drivers.git
+remote=origin
+init_submodules=TRUE
+recurse_submodules=--recursive
+submodules=
+CMP0097=NEW
+      

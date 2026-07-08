@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/CMakeFiles/lv_drivers-populate"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/CMakeFiles/lv_drivers-populate.rule"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/CMakeFiles/lv_drivers-populate-complete.rule"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-build.rule"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-configure.rule"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-download.rule"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-install.rule"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-mkdir.rule"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-patch.rule"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-test.rule"
+		},
+		{
+			"file" : "/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"lv_drivers-populate"
+		],
+		"name" : "lv_drivers-populate"
+	}
+}

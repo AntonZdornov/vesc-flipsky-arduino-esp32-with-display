@@ -1,0 +1,14 @@
+# Target labels
+ lv_drivers-populate
+# Source files and their labels
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/CMakeFiles/lv_drivers-populate
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/CMakeFiles/lv_drivers-populate.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/CMakeFiles/lv_drivers-populate-complete.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-build.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-configure.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-download.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-install.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-mkdir.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-patch.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-test.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lv_drivers-subbuild/lv_drivers-populate-prefix/src/lv_drivers-populate-stamp/lv_drivers-populate-update.rule

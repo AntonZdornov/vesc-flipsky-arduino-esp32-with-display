@@ -1,0 +1,14 @@
+# Target labels
+ lvgl-populate
+# Source files and their labels
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/CMakeFiles/lvgl-populate
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/CMakeFiles/lvgl-populate.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/CMakeFiles/lvgl-populate-complete.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/lvgl-populate-prefix/src/lvgl-populate-stamp/lvgl-populate-build.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/lvgl-populate-prefix/src/lvgl-populate-stamp/lvgl-populate-configure.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/lvgl-populate-prefix/src/lvgl-populate-stamp/lvgl-populate-download.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/lvgl-populate-prefix/src/lvgl-populate-stamp/lvgl-populate-install.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/lvgl-populate-prefix/src/lvgl-populate-stamp/lvgl-populate-mkdir.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/lvgl-populate-prefix/src/lvgl-populate-stamp/lvgl-populate-patch.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/lvgl-populate-prefix/src/lvgl-populate-stamp/lvgl-populate-test.rule
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/_deps/lvgl-subbuild/lvgl-populate-prefix/src/lvgl-populate-stamp/lvgl-populate-update.rule
