@@ -20,6 +20,9 @@ float erpm_to_kmh(long erpm, int pole_pairs, float wheel_circumference_m);
 static lv_obj_t *lbl_batt = NULL;
 static lv_obj_t *lbl_volt = NULL;
 static lv_obj_t *lbl_speed = NULL;
+static lv_obj_t *meter_speed = NULL;
+static lv_meter_indicator_t *needle_speed = NULL;
+static lv_meter_indicator_t *arc_speed = NULL;
 static lv_obj_t *lbl_temp = NULL;
 static lv_obj_t *lbl_temp_val = NULL;
 static lv_obj_t *lbl_tachometer = NULL;
@@ -39,6 +42,8 @@ extern const lv_font_t lv_font_montserrat_12;
 #define WHEEL_DIAMETER_M 0.255
 #define WHEEL_CIRC_M (3.1415926f * WHEEL_DIAMETER_M)  // окружность в метрах
 #define TACHO_COUNTS_PER_REV 8192.0f
+#define SPEED_MAX_KMH 55       // верхний предел шкалы спидометра
+#define SPEED_ALERT_KMH 50.0f  // выше этого порога спидометр краснеет
 
 void ui_build(void) {
   // lv_obj_clean(lv_scr_act());
@@ -151,25 +156,57 @@ void ui_build(void) {
   lv_obj_set_width(lbl_volt, LV_PCT(100));
   lv_obj_set_style_text_align(lbl_volt, LV_TEXT_ALIGN_CENTER, 0);
 
-  // ====== Колонка 2 (центр): Speed ======
+  // ====== Колонка 2 (центр): Speed (спидометр) ======
   lv_obj_t *col2 = lv_obj_create(body);
-  lv_obj_set_style_border_width(col2, 1, LV_PART_MAIN);
-  lv_obj_set_style_border_color(col2, lv_color_hex(0xafafaf), LV_PART_MAIN);
+  lv_obj_clear_flag(col2, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_border_width(col2, 0, LV_PART_MAIN);  // рамку убрали
   lv_obj_set_style_bg_opa(col2, LV_OPA_TRANSP, 0);
   lv_obj_set_style_pad_all(col2, 0, LV_PART_MAIN);
-  lv_obj_set_size(col2, LV_SIZE_CONTENT, LV_PCT(90));
+  lv_obj_set_size(col2, LV_SIZE_CONTENT, LV_PCT(100));
   lv_obj_set_layout(col2, LV_LAYOUT_FLEX);
   lv_obj_set_flex_flow(col2, LV_FLEX_FLOW_COLUMN);
   lv_obj_set_flex_align(col2, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
   lv_obj_set_style_flex_grow(col2, 2, 0);  // центральная шире
 
-  // Speed (крупно, "км/ч" рядом или ниже — как нравится)
-  lbl_speed = lv_label_create(col2);
-  lv_label_set_text(lbl_speed, "--");  // или "32 km/h"
+  // Спидометр: круглая шкала со стрелкой и цветной дугой
+  meter_speed = lv_meter_create(col2);
+  lv_obj_clear_flag(meter_speed, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_size(meter_speed, 128, 128);
+  lv_obj_set_style_bg_opa(meter_speed, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(meter_speed, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(meter_speed, 2, LV_PART_MAIN);
+  lv_obj_set_style_text_font(meter_speed, &lv_font_montserrat_12, LV_PART_TICKS);
+
+  lv_meter_scale_t *scale = lv_meter_add_scale(meter_speed);
+  // 56 мелких делений (0..55), каждое 5-е крупное с подписью
+  lv_meter_set_scale_ticks(meter_speed, scale, 56, 2, 6, lv_color_hex(0x808080));
+  lv_meter_set_scale_major_ticks(meter_speed, scale, 5, 3, 11, lv_color_white(), 12);
+  // диапазон 0..40 км/ч, дуга 270°, начало под углом 135° (снизу-слева)
+  lv_meter_set_scale_range(meter_speed, scale, 0, SPEED_MAX_KMH, 270, 135);
+
+  // Цветная дуга, растущая вместе со скоростью
+  arc_speed = lv_meter_add_arc(meter_speed, scale, 5, lv_color_hex(0x51f051), 0);
+  lv_meter_set_indicator_start_value(meter_speed, arc_speed, 0);
+  lv_meter_set_indicator_end_value(meter_speed, arc_speed, 0);
+
+  // Стрелка
+  needle_speed = lv_meter_add_needle_line(meter_speed, scale, 4, lv_color_hex(0x51f051), -8);
+  lv_meter_set_indicator_value(meter_speed, needle_speed, 0);
+
+  // Число скорости в центре спидометра
+  lbl_speed = lv_label_create(meter_speed);
+  lv_label_set_text(lbl_speed, "--");
   lv_obj_set_style_text_color(lbl_speed, lv_color_white(), 0);
-  lv_obj_set_style_text_font(lbl_speed, &lv_font_montserrat_48, 0);
-  lv_obj_set_width(lbl_speed, LV_PCT(100));
+  lv_obj_set_style_text_font(lbl_speed, &lv_font_montserrat_38, 0);
   lv_obj_set_style_text_align(lbl_speed, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(lbl_speed, LV_ALIGN_CENTER, 0, -6);
+
+  // Подпись "km/h" под числом
+  lv_obj_t *lbl_speed_unit = lv_label_create(meter_speed);
+  lv_label_set_text(lbl_speed_unit, "km/h");
+  lv_obj_set_style_text_color(lbl_speed_unit, lv_color_hex(0xaaaaaa), 0);
+  lv_obj_set_style_text_font(lbl_speed_unit, &lv_font_montserrat_12, 0);
+  lv_obj_align(lbl_speed_unit, LV_ALIGN_CENTER, 0, 24);
 
   // ====== Колонка 3: Temp ======
   lv_obj_t *col3 = lv_obj_create(body);
@@ -230,15 +267,73 @@ void ui_set_battery(float volts) {
   lv_label_set_text(lbl_volt, buf);
 }
 
+// Текущее (анимируемое) положение стрелки в десятых долях км/ч.
+// Шкала спидометра целочисленная (0..SPEED_MAX_KMH), поэтому храним ×10,
+// чтобы анимация шла плавно и без «ступенек».
+static int32_t needle_cur_x10 = 0;
+// Сглаженная скорость (экспоненциальное среднее) — гасит шум телеметрии VESC.
+static float speed_ema = 0.0f;
+static bool speed_ema_init = false;
+
+// Колбэк анимации: получает значение в десятых км/ч, двигает стрелку и дугу.
+static void speed_anim_cb(void *var, int32_t x10) {
+  needle_cur_x10 = x10;
+  int32_t v = (x10 + 5) / 10;  // округляем до целого км/ч для шкалы
+  if (meter_speed && needle_speed) {
+    lv_meter_set_indicator_value(meter_speed, needle_speed, v);
+  }
+  if (meter_speed && arc_speed) {
+    lv_meter_set_indicator_end_value(meter_speed, arc_speed, v);
+  }
+}
+
 void ui_set_speed(float rpm) {
   if (!lbl_speed) return;
   float speed = erpm_to_kmh(rpm, POLE_PAIRS, WHEEL_CIRC_M);  // или "%.0f km/h"
+
+  // Сглаживаем скорость, чтобы стрелка не дёргалась от шума телеметрии.
+  if (!speed_ema_init) {
+    speed_ema = speed;
+    speed_ema_init = true;
+  } else {
+    speed_ema += 0.35f * (speed - speed_ema);  // коэффициент 0.35: компромисс отклик/плавность
+  }
+  speed = speed_ema;
 
   char buf[16];
   int whole = (int)speed;
   int frac = (int)((speed - whole) * 10.0f);
   sprintf(buf, "%d.%d", whole, abs(frac));
   lv_label_set_text(lbl_speed, buf);
+
+  // Выше порога — весь циферблат (цифра, стрелка, дуга) красный, иначе зелёный/белый.
+  lv_color_t speed_color = (speed > SPEED_ALERT_KMH) ? lv_palette_main(LV_PALETTE_RED)
+                                                      : lv_color_hex(0x51f051);
+  lv_obj_set_style_text_color(lbl_speed, (speed > SPEED_ALERT_KMH) ? lv_palette_main(LV_PALETTE_RED)
+                                                                   : lv_color_white(),
+                              0);
+  if (needle_speed) needle_speed->type_data.needle_line.color = speed_color;
+  if (arc_speed) arc_speed->type_data.arc.color = speed_color;
+  if (meter_speed) lv_obj_invalidate(meter_speed);
+
+  // Целевое положение стрелки в десятых км/ч, с клампом по диапазону шкалы.
+  int32_t target_x10 = (int32_t)(speed * 10.0f + 0.5f);
+  if (target_x10 < 0) target_x10 = 0;
+  if (target_x10 > SPEED_MAX_KMH * 10) target_x10 = SPEED_MAX_KMH * 10;
+
+  if (meter_speed && needle_speed) {
+    // Плавно доводим стрелку от текущего положения к целевому.
+    // Повторный старт с тем же (var, exec_cb) заменяет предыдущую анимацию,
+    // поэтому стрелка всегда «догоняет» последнее значение без рывков.
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, meter_speed);
+    lv_anim_set_exec_cb(&a, speed_anim_cb);
+    lv_anim_set_values(&a, needle_cur_x10, target_x10);
+    lv_anim_set_time(&a, 300);  // чуть длиннее интервала опроса — движение непрерывное
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+  }
 }
 
 void ui_set_temp(float celsius) {
@@ -273,7 +368,7 @@ void ui_set_tachometerAbs(float tachometer) {
   char buf[48];
   int whole = (int)km;                         // целая часть
   int frac = (int)fabs((km - whole) * 10.0f);  // 1 цифра после точки
-  sprintf(buf, "Total: %d.%dkm", whole, frac);
+  sprintf(buf, "Total: %dkm", whole, frac);
   lv_label_set_text(lbl_tachometerAbs, buf);
 }
 
