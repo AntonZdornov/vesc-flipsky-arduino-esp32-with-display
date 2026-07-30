@@ -1,10 +1,18 @@
 #include <Adafruit_NeoPixel.h>
 #include "led.h"
 
-/// На большинстве отображающих плат на ESP32‑C6 встроена адресная RGB‑лента:
-/// GPIO8 = управляющий пин для WS2812B.
-static const uint8_t LED_PIN = 8;
+/// ВНИМАНИЕ: на Waveshare ESP32-S3-Touch-LCD-1.69 встроенной адресной RGB-ленты
+/// НЕТ (GPIO8 здесь занят под LCD_RST!). Пин ниже — под внешний WS2812B,
+/// подключённый к свободному паду GPIO17. Код всё ещё не вызывается из setup().
+static const uint8_t LED_PIN = 17;
 static const uint8_t NUM_LEDS = 1;
+
+// RGB_BUILTIN определён не во всех вариантах плат ESP32-S3 (в частности,
+// у ESP32-S3-Touch-LCD-1.69 встроенного LED нет) — иначе сборка падает.
+#ifndef RGB_BUILTIN
+#define RGB_BUILTIN LED_PIN
+#endif
+
 static bool ledsInited = false;
 static Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 

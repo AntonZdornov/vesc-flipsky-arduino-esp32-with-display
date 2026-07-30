@@ -72,6 +72,10 @@ int main(int argc, char *argv[]) {
             ui_set_tachometer(tacho);
             ui_set_tachometerAbs(tacho_abs);
             ui_set_cost(cost);
+            /* Ток мотора растёт с газом, входной — примерно motor * duty */
+            float motor_a = speed_erpm / 9000.0f * 45.0f * dir;
+            float duty    = speed_erpm / 9000.0f;
+            ui_set_currents(motor_a, motor_a * duty);
         }
     }
     return 0;
