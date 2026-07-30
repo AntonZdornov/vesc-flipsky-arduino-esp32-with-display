@@ -7,6 +7,7 @@
 #include "utils.h"
 #include "ui.h"
 #include "ui_globals.h"
+#include "vesc_limit.h"
 #include <lvgl.h>
 #include <Preferences.h>
 
@@ -18,6 +19,14 @@ static const unsigned long VESC_POLL_INTERVAL_MS = 200;  // как часто о
 // Лимит скорости включается кнопкой на левой вкладке UI (ui_get_limit25()).
 // После включения питания он всегда выключен — состояние не сохраняется.
 static const float TARGET_KMH = 25.0f;  // лимит скорости
+// Лимит реализован как временный Max ERPM в конфиге VESC (см. vesc_limit.h):
+// setRPM по UART не работал, потому что приложение газа внутри VESC его затирает.
+// ⚠️ ERPM «без лимита»: должен быть НЕ МЕНЬШЕ Max ERPM, выставленного в VESC Tool, —
+// именно это значение уезжает в контроллер при выключении лимита (до его перезагрузки).
+static const float NO_LIMIT_ERPM = 100000.0f;
+static const unsigned long LIMIT_REFRESH_MS = 3000;  // повторяем, чтобы пережить ребут VESC
+static bool limit_sent_state = false;                // какой режим уже отправлен в VESC
+static unsigned long last_limit_send_ms = 0;
 
 // Плата: Waveshare ESP32-S3-Touch-LCD-1.69.
 // GPIO0 — кнопка BOOT (единственная свободная кнопка на плате).
@@ -91,6 +100,20 @@ void loop() {
     UART.setDuty(0.03f);
   }
 
+  // Лимит скорости: правим Max ERPM в VESC при переключении тумблера, а пока лимит
+  // включён — повторяем раз в LIMIT_REFRESH_MS (store=0, значения не переживают ребут
+  // контроллера). Отправляем до getVescValues(), чтобы не мешать чтению ответа.
+  const bool limit_on = ui_get_limit25();
+  // На старте ничего не шлём: limit_sent_state == false совпадает с выключенным
+  // тумблером, и конфиг VESC остаётся тем, что выставлен в VESC Tool.
+  if (limit_on != limit_sent_state ||
+      (limit_on && now_ms - last_limit_send_ms >= LIMIT_REFRESH_MS)) {
+    const float max_erpm = limit_on ? ui_kmh_to_erpm(TARGET_KMH) : NO_LIMIT_ERPM;
+    vesc_set_erpm_limit(VSerial, -max_erpm, max_erpm);
+    limit_sent_state = limit_on;
+    last_limit_send_ms = now_ms;
+  }
+
   if (UART.getVescValues()) {
     float voltage = UART.data.inpVoltage;
     float temp = UART.data.tempMosfet;
@@ -132,19 +155,10 @@ void loop() {
       LOG_PRINTLN("LVGL lock timeout, skip UI update");
     }
 
-    // Лимит 25 км/ч: пока включён на вкладке лимита и скорость выше порога —
-    // держим обороты командой setRPM. Как только скорость ниже — команды не шлём,
-    // и через таймаут VESC (~1с) управление возвращается ручке газа.
-    // Лимит важнее выставленного тока, поэтому setCurrent на это время затыкаем.
-    if (ui_get_limit25() && ui_speed_kmh() > TARGET_KMH) {
-      UART.setRPM((int)ui_kmh_to_erpm(TARGET_KMH));
-      LOG_PRINTLN("Limit 25km/h: RPM clamped");
-    } else {
-      const float set_current = ui_get_current_applied();
-      if (set_current > 0.01f) {
-        UART.setCurrent(set_current);  // повторяем каждый цикл: таймаут VESC ~1с
-        LOG_PRINTF("setCurrent %.1f A\n", set_current);
-      }
+    const float set_current = ui_get_current_applied();
+    if (set_current > 0.01f) {
+      UART.setCurrent(set_current);  // повторяем каждый цикл: таймаут VESC ~1с
+      LOG_PRINTF("setCurrent %.1f A\n", set_current);
     }
 
     unsigned long now = millis();

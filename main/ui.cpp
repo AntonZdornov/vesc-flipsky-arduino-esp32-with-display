@@ -39,6 +39,8 @@ static lv_obj_t *lbl_limit_badge = NULL;
 static lv_obj_t *lbl_current_val = NULL;
 static lv_obj_t *lbl_current_applied = NULL;
 static lv_obj_t *lbl_current_badge = NULL;
+static lv_obj_t *btn_current_update = NULL;
+static lv_obj_t *lbl_current_update = NULL;
 static lv_obj_t *dots[4] = { NULL, NULL, NULL, NULL };
 
 // Ограничение скорости 25 км/ч. Живёт только в RAM: при каждом включении
@@ -158,6 +160,19 @@ static void ui_refresh_current(void) {
     lv_obj_set_style_text_color(lbl_current_applied,
                                (current_applied > 0.01f) ? COLOR_ACCENT : COLOR_DIM, 0);
   }
+  // Кнопка: пока в VESC уехало ровно то, что выставлено, следующее нажатие
+  // выключает ток — так и подписываем (OFF, красная). Если setpoint успели
+  // покрутить, кнопка снова становится UPDATE и применяет новое значение.
+  const bool armed = current_applied > 0.01f &&
+                     fabsf(current_applied - current_setpoint) < 0.005f;
+  if (lbl_current_update) lv_label_set_text(lbl_current_update, armed ? "OFF" : "UPDATE");
+  if (btn_current_update) {
+    lv_obj_set_style_bg_color(btn_current_update,
+                              armed ? lv_color_hex(0x8a1f1f) : lv_color_hex(0x1f7a1f), 0);
+    lv_obj_set_style_bg_color(btn_current_update,
+                              armed ? lv_palette_main(LV_PALETTE_RED) : COLOR_ACCENT,
+                              LV_STATE_PRESSED);
+  }
   if (lbl_current_badge) {
     if (current_applied > 0.01f) {
       lv_snprintf(buf, sizeof(buf), "I %d A", (int)(current_applied + 0.5f));
@@ -180,10 +195,14 @@ static void ui_current_step_cb(lv_event_t *e) {
   ui_refresh_current();
 }
 
-// UPDATE: только здесь setpoint становится тем, что loop() шлёт в VESC
+// UPDATE: только здесь setpoint становится тем, что loop() шлёт в VESC.
+// Повторное нажатие (когда applied уже равен setpoint) выключает ток: applied = 0,
+// loop() перестаёт слать setCurrent и через таймаут VESC (~1с) газ снова у ручки.
 static void ui_current_update_cb(lv_event_t *e) {
   LV_UNUSED(e);
-  current_applied = current_setpoint;
+  const bool armed = current_applied > 0.01f &&
+                     fabsf(current_applied - current_setpoint) < 0.005f;
+  current_applied = armed ? 0.0f : current_setpoint;
   ui_refresh_current();
 }
 
@@ -365,18 +384,16 @@ void ui_build(void) {
     lv_obj_center(lbl);
   }
 
-  // UPDATE — отправить выставленное значение в VESC
-  lv_obj_t *btn_update = lv_btn_create(tab_current);
-  lv_obj_set_size(btn_update, 210, 52);
-  lv_obj_set_style_radius(btn_update, 12, 0);
-  lv_obj_set_style_bg_color(btn_update, lv_color_hex(0x1f7a1f), 0);
-  lv_obj_set_style_bg_color(btn_update, COLOR_ACCENT, LV_STATE_PRESSED);
-  lv_obj_add_event_cb(btn_update, ui_current_update_cb, LV_EVENT_CLICKED, NULL);
-  lv_obj_t *lbl_update = lv_label_create(btn_update);
-  lv_label_set_text(lbl_update, "UPDATE");
-  lv_obj_set_style_text_color(lbl_update, lv_color_white(), 0);
-  lv_obj_set_style_text_font(lbl_update, &lv_font_montserrat_22, 0);
-  lv_obj_center(lbl_update);
+  // UPDATE — отправить выставленное значение в VESC; повторное нажатие выключает ток
+  // (цвет и подпись кнопки ведёт ui_refresh_current())
+  btn_current_update = lv_btn_create(tab_current);
+  lv_obj_set_size(btn_current_update, 210, 52);
+  lv_obj_set_style_radius(btn_current_update, 12, 0);
+  lv_obj_add_event_cb(btn_current_update, ui_current_update_cb, LV_EVENT_CLICKED, NULL);
+  lbl_current_update = lv_label_create(btn_current_update);
+  lv_obj_set_style_text_color(lbl_current_update, lv_color_white(), 0);
+  lv_obj_set_style_text_font(lbl_current_update, &lv_font_montserrat_22, 0);
+  lv_obj_center(lbl_current_update);
 
   lbl_current_applied = lv_label_create(tab_current);
   lv_obj_set_style_text_font(lbl_current_applied, &lv_font_montserrat_14, 0);
