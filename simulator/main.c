@@ -76,6 +76,10 @@ int main(int argc, char *argv[]) {
             float motor_a = speed_erpm / 9000.0f * 45.0f * dir;
             float duty    = speed_erpm / 9000.0f;
             ui_set_currents(motor_a, motor_a * duty);
+            ui_set_power(voltage * motor_a * duty);
+            /* Диагностика: код аварии подкидываем на пике температуры, чтобы
+               вкладку Debug можно было посмотреть без железа */
+            ui_set_diag(temp > 44.0f ? 5 /* OVER_TEMP_FET */ : 0, duty, temp - 5.0f, 1);
         }
     }
     return 0;

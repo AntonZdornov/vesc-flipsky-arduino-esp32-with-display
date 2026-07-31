@@ -26,7 +26,16 @@ static const float TARGET_KMH = 25.0f;  // лимит скорости
 static const float NO_LIMIT_ERPM = 100000.0f;
 static const unsigned long LIMIT_REFRESH_MS = 3000;  // повторяем, чтобы пережить ребут VESC
 static bool limit_sent_state = false;                // какой режим уже отправлен в VESC
+static bool lock_sent_state = false;                 // какой режим замка уже отправлен
 static unsigned long last_limit_send_ms = 0;
+
+// Замок (вкладка с клавиатурой, код в ui.cpp). Тяга отбирается внутри VESC —
+// l_current_max_scale = 0, иначе приложение газа перебило бы любую нашу команду.
+// setBrakeCurrent добавляется сверху как удерживающий тормоз и, как и setCurrent,
+// требует повтора каждый цикл (таймаут команды ~1 с).
+static const float LOCK_BRAKE_A = 6.0f;
+static bool lock_saved_state = false;   // что уже лежит в NVS
+static bool debug_saved_state = false;
 
 // Плата: Waveshare ESP32-S3-Touch-LCD-1.69.
 // GPIO0 — кнопка BOOT (единственная свободная кнопка на плате).
@@ -44,6 +53,9 @@ VescUart UART;
 static const char *PREFS_NAMESPACE = "settings";
 static const char *PREFS_KEY_TACHO_OFFSET = "tacho_off";
 static const char *PREFS_KEY_COST_OFFSET = "cost_off";
+// Замок и режим диагностики обязаны переживать выключение питания
+static const char *PREFS_KEY_LOCK = "lock";
+static const char *PREFS_KEY_DEBUG = "dbg";
 static const unsigned long PERSIST_SAVE_INTERVAL_MS = 30000;  // сохраняем в NVS не чаще раза в 30с
 static float tacho_offset_persisted = 0.0f;  // загруженный из NVS оффсет (raw VESC counts)
 static float boot_tacho = 0.0f;              // первое VESC-показание после загрузки
@@ -69,11 +81,18 @@ void setup() {
   cost_offset_persisted = prefs.getFloat(PREFS_KEY_COST_OFFSET, 0.0f);
   last_saved_cost = cost_offset_persisted;
   // prefs остаётся открытым на всё время работы — сохраняемся периодически в loop()
+  // Режим диагностики читаем ДО сборки UI: набор вкладок фиксируется в ui_build()
+  ui_set_debug_enabled(prefs.getBool(PREFS_KEY_DEBUG, false));
+  debug_saved_state = ui_get_debug_enabled();
   pinMode(BTN_PIN, INPUT_PULLUP);
   delay(200);
   LCD_Init();
   Lvgl_Init();
   ui_build();
+  // Замок восстанавливаем после сборки — ui_set_lock() трогает виджеты.
+  // Кламп в VESC при этом ещё не отправлен: это делает первая итерация loop().
+  ui_set_lock(prefs.getBool(PREFS_KEY_LOCK, false));
+  lock_saved_state = ui_get_lock();
   // UI уезжает в свою задачу FreeRTOS: свайпы и анимации больше не зависят
   // от того, сколько loop() ждёт ответа VESC
   Lvgl_Start_Task();
@@ -93,26 +112,54 @@ void loop() {
   }
   lastFetch = now_ms;
 
+  const bool lock_on = ui_get_lock();
+
   int state = digitalRead(BTN_PIN);  // читаем состояние
 
-  if (state == LOW) {
+  // Пока замок активен, ручные команды тяги не шлём — они дрались бы с тормозом
+  if (state == LOW && !lock_on) {
     LOG_PRINTLN("Button held: test duty");
     UART.setDuty(0.03f);
   }
 
-  // Лимит скорости: правим Max ERPM в VESC при переключении тумблера, а пока лимит
-  // включён — повторяем раз в LIMIT_REFRESH_MS (store=0, значения не переживают ребут
-  // контроллера). Отправляем до getVescValues(), чтобы не мешать чтению ответа.
+  // Лимит скорости и замок правят один и тот же пакет mcconf (он перезаписывает все
+  // поля разом), поэтому собираем их в одну структуру. Шлём при любом изменении, а
+  // пока что-то активно — повторяем раз в LIMIT_REFRESH_MS (store=0, значения не
+  // переживают ребут контроллера). До getVescValues(), чтобы не мешать чтению ответа.
   const bool limit_on = ui_get_limit25();
-  // На старте ничего не шлём: limit_sent_state == false совпадает с выключенным
-  // тумблером, и конфиг VESC остаётся тем, что выставлен в VESC Tool.
-  if (limit_on != limit_sent_state ||
-      (limit_on && now_ms - last_limit_send_ms >= LIMIT_REFRESH_MS)) {
-    const float max_erpm = limit_on ? ui_kmh_to_erpm(TARGET_KMH) : NO_LIMIT_ERPM;
-    vesc_set_erpm_limit(VSerial, -max_erpm, max_erpm);
+  const bool guard_on = limit_on || lock_on;
+  // На старте ничего не шлём, если замок снят и лимит выключен: сохранённые состояния
+  // совпадают с *_sent_state, и конфиг VESC остаётся тем, что выставлен в VESC Tool.
+  // А вот замок, поднятый из NVS, уезжает в контроллер на первой же итерации.
+  if (limit_on != limit_sent_state || lock_on != lock_sent_state ||
+      (guard_on && now_ms - last_limit_send_ms >= LIMIT_REFRESH_MS)) {
+    VescLimits lim;
+    lim.max_erpm = limit_on ? ui_kmh_to_erpm(TARGET_KMH) : NO_LIMIT_ERPM;
+    lim.min_erpm = -lim.max_erpm;
+    lim.current_min_scale = 1.0f;             // тормозную сторону не режем: ей держим замок
+    lim.current_max_scale = lock_on ? 0.0f : 1.0f;  // 0 = газ не даёт тока
+    vesc_send_limits(VSerial, lim);
     limit_sent_state = limit_on;
+    lock_sent_state = lock_on;
     last_limit_send_ms = now_ms;
   }
+
+  // Состояние замка и режима диагностики держим в NVS: события редкие, пишем сразу,
+  // без 30-секундного троттлинга одометра.
+  if (lock_on != lock_saved_state) {
+    prefs.putBool(PREFS_KEY_LOCK, lock_on);
+    lock_saved_state = lock_on;
+    LOG_PRINTF("lock %s (saved)\n", lock_on ? "ON" : "OFF");
+  }
+  const bool debug_on = ui_get_debug_enabled();
+  if (debug_on != debug_saved_state) {
+    prefs.putBool(PREFS_KEY_DEBUG, debug_on);
+    debug_saved_state = debug_on;
+  }
+
+  // Удерживающий тормоз замка — до чтения телеметрии и независимо от того, ответил
+  // ли VESC: замок должен держать даже при сбоях связи.
+  if (lock_on) UART.setBrakeCurrent(LOCK_BRAKE_A);
 
   if (UART.getVescValues()) {
     float voltage = UART.data.inpVoltage;
@@ -147,16 +194,19 @@ void loop() {
       ui_set_tachometer(trip_tacho);
       ui_set_cost(total_cost);
       ui_set_currents(motorCurrent, inputCurrent);
+      ui_set_power(voltage * inputCurrent);  // мощность на колесо, Вт
       ui_set_battery(voltage);
       ui_set_temp(temp);
       ui_set_speed(rpm);
+      ui_set_diag((int)UART.data.error, UART.data.dutyCycleNow, UART.data.tempMotor, true);
       Lvgl_Unlock();
     } else {
       LOG_PRINTLN("LVGL lock timeout, skip UI update");
     }
 
+    // Ток с вкладки 0 под замком не шлём — он тянул бы вперёд против тормоза
     const float set_current = ui_get_current_applied();
-    if (set_current > 0.01f) {
+    if (!lock_on && set_current > 0.01f) {
       UART.setCurrent(set_current);  // повторяем каждый цикл: таймаут VESC ~1с
       LOG_PRINTF("setCurrent %.1f A\n", set_current);
     }
@@ -172,6 +222,12 @@ void loop() {
         last_saved_cost = total_cost;
       }
       last_persist_save_ms = now;
+    }
+  } else {
+    // Ответа нет — на вкладке диагностики это видно как «VESC LINK: NO DATA»
+    if (Lvgl_Lock(100)) {
+      ui_set_diag(0, 0.0f, 0.0f, false);
+      Lvgl_Unlock();
     }
   }
 

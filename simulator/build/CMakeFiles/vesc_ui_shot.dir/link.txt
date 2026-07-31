@@ -1,0 +1,1 @@
+/usr/bin/c++  -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/vesc_ui_shot.dir/screenshot.c.o CMakeFiles/vesc_ui_shot.dir/arduino_shim.cpp.o "CMakeFiles/vesc_ui_shot.dir/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.o" -o vesc_ui_shot   -L/opt/homebrew/lib  -Wl,-rpath,/opt/homebrew/lib lib/liblvgl.a

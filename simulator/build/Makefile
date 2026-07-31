@@ -175,6 +175,19 @@ vesc_ui_sim/fast:
 .PHONY : vesc_ui_sim/fast
 
 #=============================================================================
+# Target rules for targets named vesc_ui_shot
+
+# Build rule for target.
+vesc_ui_shot: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 vesc_ui_shot
+.PHONY : vesc_ui_shot
+
+# fast build rule for target.
+vesc_ui_shot/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/build
+.PHONY : vesc_ui_shot/fast
+
+#=============================================================================
 # Target rules for targets named lvgl
 
 # Build rule for target.
@@ -232,6 +245,7 @@ Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/m
 # target to build an object file
 Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_sim.dir/build.make CMakeFiles/vesc_ui_sim.dir/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.o
 .PHONY : Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.o
 
 Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.i: Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.i
@@ -240,6 +254,7 @@ Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/m
 # target to preprocess a source file
 Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_sim.dir/build.make CMakeFiles/vesc_ui_sim.dir/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.i
 .PHONY : Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.i
 
 Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.s: Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.s
@@ -248,6 +263,7 @@ Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/m
 # target to generate assembly for a file
 Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_sim.dir/build.make CMakeFiles/vesc_ui_sim.dir/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.s
 .PHONY : Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.cpp.s
 
 arduino_shim.o: arduino_shim.cpp.o
@@ -256,6 +272,7 @@ arduino_shim.o: arduino_shim.cpp.o
 # target to build an object file
 arduino_shim.cpp.o:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_sim.dir/build.make CMakeFiles/vesc_ui_sim.dir/arduino_shim.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/arduino_shim.cpp.o
 .PHONY : arduino_shim.cpp.o
 
 arduino_shim.i: arduino_shim.cpp.i
@@ -264,6 +281,7 @@ arduino_shim.i: arduino_shim.cpp.i
 # target to preprocess a source file
 arduino_shim.cpp.i:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_sim.dir/build.make CMakeFiles/vesc_ui_sim.dir/arduino_shim.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/arduino_shim.cpp.i
 .PHONY : arduino_shim.cpp.i
 
 arduino_shim.s: arduino_shim.cpp.s
@@ -272,6 +290,7 @@ arduino_shim.s: arduino_shim.cpp.s
 # target to generate assembly for a file
 arduino_shim.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_sim.dir/build.make CMakeFiles/vesc_ui_sim.dir/arduino_shim.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/arduino_shim.cpp.s
 .PHONY : arduino_shim.cpp.s
 
 main.o: main.c.o
@@ -298,6 +317,30 @@ main.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_sim.dir/build.make CMakeFiles/vesc_ui_sim.dir/main.c.s
 .PHONY : main.c.s
 
+screenshot.o: screenshot.c.o
+.PHONY : screenshot.o
+
+# target to build an object file
+screenshot.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/screenshot.c.o
+.PHONY : screenshot.c.o
+
+screenshot.i: screenshot.c.i
+.PHONY : screenshot.i
+
+# target to preprocess a source file
+screenshot.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/screenshot.c.i
+.PHONY : screenshot.c.i
+
+screenshot.s: screenshot.c.s
+.PHONY : screenshot.s
+
+# target to generate assembly for a file
+screenshot.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vesc_ui_shot.dir/build.make CMakeFiles/vesc_ui_shot.dir/screenshot.c.s
+.PHONY : screenshot.c.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -314,6 +357,7 @@ help:
 	@echo "... lvgl"
 	@echo "... lvgl_demos"
 	@echo "... lvgl_examples"
+	@echo "... vesc_ui_shot"
 	@echo "... vesc_ui_sim"
 	@echo "... Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.o"
 	@echo "... Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/main/ui.i"
@@ -324,6 +368,9 @@ help:
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
+	@echo "... screenshot.o"
+	@echo "... screenshot.i"
+	@echo "... screenshot.s"
 .PHONY : help
 
 

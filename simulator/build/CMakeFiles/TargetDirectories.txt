@@ -1,4 +1,5 @@
 /Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/CMakeFiles/vesc_ui_sim.dir
+/Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/CMakeFiles/vesc_ui_shot.dir
 /Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/CMakeFiles/edit_cache.dir
 /Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/CMakeFiles/rebuild_cache.dir
 /Users/anton/Documents/projects/arduino/vesc-flipsky-arduino-esp32-with-display/simulator/build/CMakeFiles/list_install_components.dir

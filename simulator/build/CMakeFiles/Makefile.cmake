@@ -71,6 +71,7 @@ set(CMAKE_MAKEFILE_PRODUCTS
 # Dependency information for all targets:
 set(CMAKE_DEPEND_INFO_FILES
   "CMakeFiles/vesc_ui_sim.dir/DependInfo.cmake"
+  "CMakeFiles/vesc_ui_shot.dir/DependInfo.cmake"
   "_deps/lvgl-build/CMakeFiles/lvgl.dir/DependInfo.cmake"
   "_deps/lvgl-build/CMakeFiles/lvgl_examples.dir/DependInfo.cmake"
   "_deps/lvgl-build/CMakeFiles/lvgl_demos.dir/DependInfo.cmake"
