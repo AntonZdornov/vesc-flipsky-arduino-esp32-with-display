@@ -1,7 +1,7 @@
 #pragma once
 
 #define USE_SDL              1
-/* Разрешение экрана устройства: ESP32-S3-Touch-LCD-1.69, 240x280 (портрет) */
+/* Device screen resolution: ESP32-S3-Touch-LCD-1.69, 240x280 (portrait) */
 #define SDL_HOR_RES          240
 #define SDL_VER_RES          280
 #define SDL_ZOOM             1

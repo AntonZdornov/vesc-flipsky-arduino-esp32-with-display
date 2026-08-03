@@ -72,13 +72,13 @@ int main(int argc, char *argv[]) {
             ui_set_tachometer(tacho);
             ui_set_tachometerAbs(tacho_abs);
             ui_set_cost(cost);
-            /* Ток мотора растёт с газом, входной — примерно motor * duty */
+            /* Motor current rises with the throttle, input current is roughly motor * duty */
             float motor_a = speed_erpm / 9000.0f * 45.0f * dir;
             float duty    = speed_erpm / 9000.0f;
             ui_set_currents(motor_a, motor_a * duty);
             ui_set_power(voltage * motor_a * duty);
-            /* Диагностика: код аварии подкидываем на пике температуры, чтобы
-               вкладку Debug можно было посмотреть без железа */
+            /* Diagnostics: inject a fault code at the temperature peak so the
+               Debug tab can be inspected without hardware */
             ui_set_diag(temp > 44.0f ? 5 /* OVER_TEMP_FET */ : 0, duty, temp - 5.0f, 1);
         }
     }

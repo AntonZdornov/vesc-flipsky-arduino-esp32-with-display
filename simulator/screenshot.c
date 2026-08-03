@@ -1,6 +1,6 @@
-/* Безголовый рендер UI в BMP: тот же ui_build(), что и в SDL-симуляторе, но без
-   окна — удобно посмотреть раскладку каждой вкладки (и в CI, и по SSH).
-   Сборка: cmake --build . --target vesc_ui_shot; запуск: ./vesc_ui_shot <каталог> */
+/* Headless render of the UI to BMP: the same ui_build() as in the SDL simulator but
+   without a window - handy to inspect each tab's layout (in CI and over SSH).
+   Build: cmake --build . --target vesc_ui_shot; run: ./vesc_ui_shot <directory> */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +46,7 @@ static void write_bmp(const char *path) {
     if (!f) { printf("cannot write %s\n", path); return; }
     fwrite(hdr, 1, sizeof(hdr), f);
     const unsigned char zero[3] = { 0, 0, 0 };
-    for (int y = SHOT_H - 1; y >= 0; y--) {   /* BMP хранит строки снизу вверх */
+    for (int y = SHOT_H - 1; y >= 0; y--) {   /* BMP stores rows bottom-up */
         for (int x = 0; x < SHOT_W; x++) {
             const uint32_t c = lv_color_to32(fb[y * SHOT_W + x]);
             const unsigned char bgr[3] = { c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF };
@@ -58,8 +58,8 @@ static void write_bmp(const char *path) {
     printf("%s\n", path);
 }
 
-/* Скриптованный «палец»: клики по координатам, чтобы прогнать клавиатуру замка и
-   пересборку UI без окна. */
+/* Scripted "finger": clicks at coordinates, to drive the lock keypad and the UI
+   rebuild without a window. */
 static lv_point_t touch_pt;
 static bool touch_down = false;
 
@@ -107,10 +107,10 @@ int main(int argc, char *argv[]) {
     drv.ver_res = SHOT_H;
     lv_disp_drv_register(&drv);
 
-    ui_set_debug_enabled(1);   /* чтобы отрисовалась и вкладка диагностики */
+    ui_set_debug_enabled(1);   /* so the diagnostics tab is rendered too */
     ui_build();
 
-    /* Правдоподобные данные */
+    /* Plausible data */
     ui_set_battery(51.2f);
     ui_set_temp(38.4f);
     ui_set_speed(7000.0f);
@@ -122,7 +122,7 @@ int main(int argc, char *argv[]) {
     ui_set_diag(6 /* OVER_TEMP_MOTOR */, 0.42f, 61.5f, 1);
     ui_set_lock(1);
 
-    /* tabview — первый ребёнок экрана (создаётся раньше точек-индикатора) */
+    /* tabview is the screen's first child (created before the indicator dots) */
     lv_obj_t *tv = lv_obj_get_child(lv_scr_act(), 0);
     const char *names[] = { "0-current", "1-limit", "2-dash", "3-trip", "4-lock", "5-diag" };
     char path[512];
@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
         write_bmp(path);
     }
 
-    /* Меню настроек: оверлей — первый ребёнок верхнего слоя */
+    /* Settings menu: the overlay is the top layer's first child */
     lv_tabview_set_act(tv, 2, LV_ANIM_OFF);
     lv_obj_clear_flag(lv_obj_get_child(lv_layer_top(), 0), LV_OBJ_FLAG_HIDDEN);
     pump(400);
@@ -141,7 +141,7 @@ int main(int argc, char *argv[]) {
     write_bmp(path);
     lv_obj_add_flag(lv_obj_get_child(lv_layer_top(), 0), LV_OBJ_FLAG_HIDDEN);
 
-    /* ===== Сценарий: ввод кода и переключение диагностики ===== */
+    /* ===== Scenario: enter the code and toggle diagnostics ===== */
     static lv_indev_drv_t indev;
     lv_indev_drv_init(&indev);
     indev.type = LV_INDEV_TYPE_POINTER;
@@ -163,25 +163,25 @@ int main(int argc, char *argv[]) {
         const int d = *c - '1';
         click_at(k.x1 + (d % 3) * kw + kw / 2, k.y1 + (d / 3) * kh + kh / 2);
     }
-    printf("lock after 1987: %d (ожидание: инверсия)\n", (int)ui_get_lock());
+    printf("lock after 1987: %d (expected: toggled)\n", (int)ui_get_lock());
     snprintf(path, sizeof(path), "%s/after-code.bmp", dir);
     write_bmp(path);
 
-    /* Шестерёнка на вкладке отчёта -> тумблер диагностики -> пересборка UI */
+    /* Gear button on the report tab -> diagnostics toggle -> UI rebuild */
     lv_tabview_set_act(tv, 3, LV_ANIM_OFF);
     pump(400);
     lv_obj_t *trip = lv_obj_get_child(lv_tabview_get_content(tv), 3);
-    lv_obj_t *gear = NULL;                 /* ищем по размеру: 34x34 только у неё */
+    lv_obj_t *gear = NULL;                 /* found by size: it is the only 34x34 object */
     for (uint32_t i = 0; i < lv_obj_get_child_cnt(trip); i++) {
         lv_obj_t *ch = lv_obj_get_child(trip, i);
         if (lv_obj_get_width(ch) == 34 && lv_obj_get_height(ch) == 34) gear = ch;
     }
-    if (!gear) { printf("ОШИБКА: шестерёнка не найдена\n"); return 1; }
+    if (!gear) { printf("ERROR: gear button not found\n"); return 1; }
     click_obj(gear);
     lv_obj_t *panel = lv_obj_get_child(lv_obj_get_child(lv_layer_top(), 0), 0);
     click_obj(lv_obj_get_child(panel, 1)); /* DEBUG MODE */
-    pump(600);                             /* здесь отрабатывает lv_async пересборки */
-    printf("debug after toggle: %d (ожидание: 0)\n", (int)ui_get_debug_enabled());
+    pump(600);                             /* the rebuild lv_async runs here */
+    printf("debug after toggle: %d (expected: 0)\n", (int)ui_get_debug_enabled());
     printf("lock survived rebuild: %d\n", (int)ui_get_lock());
     snprintf(path, sizeof(path), "%s/after-rebuild.bmp", dir);
     write_bmp(path);

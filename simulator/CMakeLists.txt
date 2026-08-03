@@ -40,7 +40,7 @@ add_executable(vesc_ui_sim
 
 target_link_libraries(vesc_ui_sim PRIVATE lvgl lv_drivers ${SDL2_LIBRARIES})
 
-# Безголовый рендер вкладок в BMP — посмотреть раскладку без окна SDL
+# Headless render of the tabs to BMP - inspect the layout without an SDL window
 add_executable(vesc_ui_shot EXCLUDE_FROM_ALL
     screenshot.c
     arduino_shim.cpp
