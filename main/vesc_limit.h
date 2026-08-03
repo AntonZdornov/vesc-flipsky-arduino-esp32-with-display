@@ -2,24 +2,25 @@
 
 #include <Arduino.h>
 
-// Временные лимиты в конфиге мотора VESC (пакет COMM_SET_MCCONF_TEMP).
+// Temporary limits in the VESC motor config (COMM_SET_MCCONF_TEMP packet).
 //
-// Почему не setRPM/setBrakeCurrent: приложение газа (ADC/PPM) внутри VESC переписывает
-// setpoint каждый управляющий цикл (~1 кГц), поэтому редкие команды по UART оно просто
-// затирает — ни лимит скорости, ни замок так не сделать. Здесь вместо этого правится
-// сам конфиг мотора: контроллер сам режет ток, и газ уже физически не может его превысить.
+// Why not setRPM/setBrakeCurrent: the throttle app (ADC/PPM) inside the VESC rewrites
+// the setpoint every control cycle (~1 kHz), so it simply overwrites the rare UART
+// commands - neither the speed limit nor the lock can be built that way. Instead the
+// motor config itself is patched: the controller clamps the current, and the throttle
+// physically cannot exceed it.
 //
-// store = 0 — во флеш не пишем, значения живут до перезагрузки VESC (и мы их
-// периодически повторяем из loop(), чтобы лимит переживал ребут контроллера).
+// store = 0 - nothing is written to flash, the values live until the VESC reboots (and
+// loop() re-sends them periodically so the limit survives a controller reboot).
 //
-// ВАЖНО: пакет перезаписывает все восемь полей разом, поэтому у лимита скорости и у
-// замка не может быть «своих» отправок — оба регулятора складываются в одну структуру,
-// и loop() шлёт её целиком.
+// IMPORTANT: the packet rewrites all eight fields at once, so neither the speed limit
+// nor the lock may send it on its own - both regulators are folded into one struct and
+// loop() sends that as a whole.
 struct VescLimits {
-  float min_erpm;           // l_min_erpm — «назад»
-  float max_erpm;           // l_max_erpm — лимит скорости
-  float current_min_scale;  // 0..1, тормозная сторона (0 убьёт и наш setBrakeCurrent)
-  float current_max_scale;  // 0..1, тяга: 0 = газ не даёт тока (замок)
+  float min_erpm;           // l_min_erpm - reverse
+  float max_erpm;           // l_max_erpm - speed limit
+  float current_min_scale;  // 0..1, braking side (0 would also kill our setBrakeCurrent)
+  float current_max_scale;  // 0..1, drive side: 0 = the throttle produces no current (lock)
 };
 
 void vesc_send_limits(Stream &port, const VescLimits &lim);

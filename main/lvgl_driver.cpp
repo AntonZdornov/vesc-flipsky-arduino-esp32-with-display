@@ -15,24 +15,16 @@
 static lv_disp_draw_buf_t draw_buf;
 static lv_color_t buf1[LVGL_BUF_LEN];
 static lv_color_t buf2[LVGL_BUF_LEN];
-// static lv_color_t* buf1 = (lv_color_t*) heap_caps_malloc(LVGL_BUF_LEN, MALLOC_CAP_SPIRAM);
-// static lv_color_t* buf2 = (lv_color_t*) heap_caps_malloc(LVGL_BUF_LEN,f MALLOC_CAP_SPIRAM);
 
-// Рекурсивный мьютекс: LVGL крутится в своей задаче, а ui_set_* зовутся из loop()
+// Recursive mutex: LVGL runs in its own task while ui_set_* is called from loop()
 static SemaphoreHandle_t lvgl_mutex = NULL;
 
 #define LVGL_TASK_STACK      12288
-#define LVGL_TASK_PRIORITY   2  // выше loopTask (1), чтобы UI не ждал опроса VESC
-#define LVGL_TASK_CORE       0  // loopTask живёт на core 1 — разводим по ядрам
+#define LVGL_TASK_PRIORITY   2  // above loopTask (1) so the UI does not wait on VESC polling
+#define LVGL_TASK_CORE       0  // loopTask lives on core 1 - keep them on separate cores
 #define LVGL_TASK_MIN_MS     5
 #define LVGL_TASK_MAX_MS     20
 
-
-/* Serial debugging */
-void Lvgl_print(const char *buf) {
-  // Serial.printf(buf);
-  // Serial.flush();
-}
 
 /*  Display flushing
     Displays LVGL content on the LCD
@@ -59,7 +51,7 @@ void example_increase_lvgl_tick(void *arg) {
 }
 
 bool Lvgl_Lock(int timeout_ms) {
-  if (lvgl_mutex == NULL) return true;  // задача ещё не запущена — конкуренции нет
+  if (lvgl_mutex == NULL) return true;  // task not started yet - no contention
   const TickType_t ticks = (timeout_ms < 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
   return xSemaphoreTakeRecursive(lvgl_mutex, ticks) == pdTRUE;
 }
@@ -73,11 +65,11 @@ static void lvgl_task(void *arg) {
   for (;;) {
     uint32_t next_ms = LVGL_TASK_MAX_MS;
     if (Lvgl_Lock(-1)) {
-      next_ms = lv_timer_handler();  // сам говорит, через сколько его позвать
+      next_ms = lv_timer_handler();  // it tells us when to call it again
       Lvgl_Unlock();
     }
     if (next_ms < LVGL_TASK_MIN_MS) next_ms = LVGL_TASK_MIN_MS;
-    if (next_ms > LVGL_TASK_MAX_MS) next_ms = LVGL_TASK_MAX_MS;  // отклик на свайпы
+    if (next_ms > LVGL_TASK_MAX_MS) next_ms = LVGL_TASK_MAX_MS;  // keeps swipes responsive
     vTaskDelay(pdMS_TO_TICKS(next_ms));
   }
 }
@@ -102,9 +94,9 @@ void Lvgl_Init(void) {
   disp_drv.hor_res = LVGL_WIDTH;
   disp_drv.ver_res = LVGL_HEIGHT;
   disp_drv.flush_cb = Lvgl_Display_LCD;
-  // full_refresh = 0: перерисовываем только изменившиеся области. Полный кадр
-  // 240x280x2 = 134 КБ по SPI на 40 МГц — это ~30 мс, на свайпах заметно.
-  // (к тому же full_refresh рассчитан на буфер размером во весь экран, а у нас 1/20).
+  // full_refresh = 0: redraw only the changed areas. A full frame is
+  // 240x280x2 = 134 KB over SPI at 40 MHz - about 30 ms, noticeable while swiping.
+  // (besides, full_refresh expects a full-screen buffer and ours is 1/20 of that).
   disp_drv.full_refresh = 0;
   disp_drv.draw_buf = &draw_buf;
   lv_disp_drv_register(&disp_drv);
@@ -114,7 +106,7 @@ void Lvgl_Init(void) {
   // lv_disp_t *disp = lv_disp_get_default();
   // lv_disp_set_rotation(disp, LV_DISP_ROT_90);
 
-  /*Initialize the input device driver (ёмкостный тач CST816T)*/
+  /*Initialize the input device driver (CST816T capacitive touch)*/
   Touch_Init();
   static lv_indev_drv_t indev_drv;
   lv_indev_drv_init(&indev_drv);
@@ -137,8 +129,4 @@ void Lvgl_Init(void) {
 
   // lv_disp_t *disp = lv_disp_get_default();
   // lv_disp_set_rotation(disp, LV_DISP_ROT_90);
-}
-void Timer_Loop(void) {
-  lv_timer_handler(); /* let the GUI do its work */
-  // delay( 5 );
 }

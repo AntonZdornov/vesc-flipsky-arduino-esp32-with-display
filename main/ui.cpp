@@ -14,7 +14,7 @@
 #define DEBUG_MODE 0
 #endif
 
-// Реализации в main/utils.cpp (Arduino-сборка) или simulator/arduino_shim.cpp (PC-симулятор).
+// Implemented in main/utils.cpp (Arduino build) or simulator/arduino_shim.cpp (PC simulator).
 uint8_t calcBatteryPercent(float voltage);
 float erpm_to_kmh(long erpm, int pole_pairs, float wheel_circumference_m);
 
@@ -55,45 +55,47 @@ static lv_obj_t *lbl_diag_last = NULL;
 static lv_obj_t *lbl_diag_duty = NULL;
 static lv_obj_t *lbl_diag_tmotor = NULL;
 static lv_obj_t *lbl_diag_link = NULL;
-static lv_obj_t *dots[6] = { NULL, NULL, NULL, NULL, NULL, NULL };  // размер = TAB_MAX
+static lv_obj_t *dots[6] = { NULL, NULL, NULL, NULL, NULL, NULL };  // size = TAB_MAX
 
-// Ограничение скорости 25 км/ч. Живёт только в RAM: при каждом включении
-// контроллера должно быть ВЫКЛЮЧЕНО (в NVS специально не сохраняем).
-// volatile: пишется из задачи LVGL (колбэк кнопки), читается из loop()
+// 25 km/h speed limit. Lives in RAM only: it must be OFF every time the board powers
+// up (deliberately not stored in NVS).
+// volatile: written from the LVGL task (button callback), read from loop()
 static volatile bool limit25_on = false;
 
-// Замок: пока включён, loop() отбирает у газа тягу в самом VESC и держит тормоз.
-// В отличие от лимита 25 состояние сохраняется в NVS (иначе замок бессмыслен) —
-// пишет его loop(), здесь только флаг. volatile: пишется из задачи LVGL.
+// Lock: while it is on, loop() takes drive current away from the throttle inside the
+// VESC itself and holds the brake. Unlike the 25 km/h limit the state is stored in NVS
+// (otherwise the lock would be pointless) - loop() writes it, this is just the flag.
+// volatile: written from the LVGL task.
 static volatile bool lock_on = false;
-// Режим диагностики: добавляет последнюю вкладку. Тоже живёт в NVS.
+// Diagnostics mode: adds the last tab. Also lives in NVS.
 static volatile bool debug_enabled = false;
 
-// Ток мотора (setCurrent): setpoint крутится кнопками +/-, а applied
-// применяется только по кнопке UPDATE — его и повторяет loop() в VESC.
+// Motor current (setCurrent): the setpoint is moved by the +/- buttons, while applied
+// is committed only by the UPDATE button - that is what loop() repeats to the VESC.
 static volatile float current_setpoint = 0.0f;
 static volatile float current_applied = 0.0f;
 
-// Замер пиковых токов (вкладка отчёта). Пока кнопка нажата, ui_set_currents()
-// копит максимумы и показывает их ВМЕСТО живых значений — в тех же лейблах,
-// отличие только по цвету. Включение кнопки начинает замер заново. В NVS не
-// пишем — это разовое измерение, после перезагрузки не нужно.
+// Peak current measurement (report tab). While the button is on, ui_set_currents()
+// accumulates the maxima and shows them INSTEAD of the live values - in the same
+// labels, only the colour differs. Turning the button on restarts the measurement.
+// Not written to NVS - this is a one-off measurement, not needed after a reboot.
 static volatile bool peak_measuring = false;
 static volatile float peak_motor_a = 0.0f;
 static volatile float peak_input_a = 0.0f;
-// Пиковая мощность копится тем же замером: кнопка на вкладке отчёта, а
-// показывается на спидометре — в лейбле кВт вместо живого значения.
+// Peak power is accumulated by the same measurement: the button is on the report tab
+// but the value is shown on the speedometer, in the kW label instead of the live one.
 static volatile float peak_power_w = 0.0f;
 
-// Сглаживание живых токов: VESC усредняет их лишь за период ШИМ, «сырые»
-// значения на экране пляшут. Коэффициент мягче, чем у спидометра — цифры
-// без стрелки. Пики при этом копятся по сырым (см. ui_set_currents).
+// Smoothing of the live currents: the VESC averages them only over a PWM period, so
+// the raw values jitter on screen. The coefficient is gentler than the speedometer's -
+// these are plain numbers, no needle. Peaks are still taken from the raw values
+// (see ui_set_currents).
 static float cur_motor_ema = 0.0f;
 static float cur_input_ema = 0.0f;
 static bool cur_ema_init = false;
 
-// Сглаживание мощности: она считается из входного тока, а он на экране пляшет
-// сильнее всего (произведение двух шумных величин).
+// Smoothing of the power: it is computed from the input current, which jitters the
+// most on screen (a product of two noisy values).
 static float power_ema = 0.0f;
 static bool power_ema_init = false;
 
@@ -105,27 +107,27 @@ extern const lv_font_t lv_font_montserrat_18;
 extern const lv_font_t lv_font_montserrat_14;
 extern const lv_font_t lv_font_montserrat_12;
 
-#define POLE_PAIRS 15  // обычно 7 для 14-полюсного мотора
+#define POLE_PAIRS 15  // usually 7 for a 14-pole motor
 #define WHEEL_DIAMETER_M 0.255
-#define WHEEL_CIRC_M (3.1415926f * WHEEL_DIAMETER_M)  // окружность в метрах
+#define WHEEL_CIRC_M (3.1415926f * WHEEL_DIAMETER_M)  // circumference in metres
 #define TACHO_COUNTS_PER_REV 8192.0f
-#define SPEED_MAX_KMH 55       // верхний предел шкалы спидометра
-#define SPEED_ALERT_KMH 50.0f  // выше этого порога спидометр краснеет
-#define METER_SIZE 190         // диаметр спидометра, px (влезает в 240 по ширине)
-// Кольцо мощности: рисуется по внешнему краю спидометра, поэтому шкала
-// (циферблат) отодвинута внутрь на METER_PAD = ширина кольца + зазор.
-#define POWER_ARC_W 6          // толщина синего кольца, px
+#define SPEED_MAX_KMH 55       // upper end of the speedometer scale
+#define SPEED_ALERT_KMH 50.0f  // above this threshold the speedometer turns red
+#define METER_SIZE 190         // speedometer diameter, px (fits into the 240 px width)
+// Power ring: drawn along the outer edge of the speedometer, so the scale (the dial)
+// is pushed inwards by METER_PAD = ring width + gap.
+#define POWER_ARC_W 6          // blue ring thickness, px
 #define METER_PAD (POWER_ARC_W + 5)
-#define POWER_MAX_W 3000       // верх шкалы кольца, Вт (полное кольцо)
-#define POWER_ALERT_W 3000.0f  // выше этого порога кольцо и цифра краснеют
+#define POWER_MAX_W 3000       // top of the ring scale, W (full ring)
+#define POWER_ALERT_W 3000.0f  // above this threshold the ring and the number turn red
 #define COLOR_POWER lv_color_hex(0x2196f3)
 
 #define COLOR_ACCENT lv_color_hex(0x51f051)
 #define COLOR_DIM lv_color_hex(0x808080)
 
-// Порядок вкладок: свайп влево/вправо листает их по горизонтали.
-// Последняя (TAB_DEBUG) существует только при включённом режиме диагностики,
-// поэтому реальное количество лежит в tab_count, а не в дефайне.
+// Tab order: a left/right swipe pages through them horizontally.
+// The last one (TAB_DEBUG) exists only when diagnostics mode is on, so the actual
+// count lives in tab_count rather than in a define.
 #define TAB_CURRENT 0
 #define TAB_LIMIT 1
 #define TAB_DASH 2
@@ -136,16 +138,16 @@ extern const lv_font_t lv_font_montserrat_12;
 
 static uint8_t tab_count = 5;
 
-// Код замка. Клавиатура — только 1..9, поэтому нуля в коде быть не может.
+// Lock code. The keypad only has 1..9, so the code cannot contain a zero.
 #define LOCK_CODE "1987"
 #define LOCK_CODE_LEN 4
 
-#define CURRENT_STEP_A 1.0f   // шаг кнопок +/-
-#define CURRENT_MAX_A 60.0f   // потолок setCurrent, А (сверь с настройками VESC!)
+#define CURRENT_STEP_A 1.0f   // step of the +/- buttons
+#define CURRENT_MAX_A 60.0f   // setCurrent ceiling, A (cross-check with the VESC settings!)
 
 static void ui_lock_reset_entry(void);
 
-// Точки-индикатор текущей вкладки (кнопки таба спрятаны)
+// Dots indicating the current tab (the tab buttons are hidden)
 static void ui_update_dots(uint16_t act) {
   for (int i = 0; i < tab_count; i++) {
     if (!dots[i]) continue;
@@ -158,11 +160,11 @@ static void ui_tab_changed_cb(lv_event_t *e) {
   if (!tabview) return;
   const uint16_t act = lv_tabview_get_tab_act(tabview);
   ui_update_dots(act);
-  // Уход с клавиатуры сбрасывает недобранный код: вернувшись, начинаем с чистого листа
+  // Leaving the keypad clears a partially entered code: coming back starts from scratch
   if (act != TAB_LOCK) ui_lock_reset_entry();
 }
 
-// Приводит подписи/цвета к текущему состоянию лимита
+// Brings the labels/colours in line with the current limit state
 static void ui_refresh_limit(void) {
   if (lbl_limit_state) {
     lv_label_set_text(lbl_limit_state, limit25_on ? "ON" : "OFF");
@@ -180,14 +182,14 @@ static void ui_limit_btn_cb(lv_event_t *e) {
   ui_refresh_limit();
 }
 
-// ====== Замок: клавиатура 1..9 и код ======
-// Набранное хранится строкой, чтобы сравнение с LOCK_CODE было тривиальным.
+// ====== Lock: 1..9 keypad and the code ======
+// What has been typed is kept as a string so comparing with LOCK_CODE is trivial.
 static char lock_entry[LOCK_CODE_LEN + 1] = "";
 static uint8_t lock_entry_len = 0;
 
 static void ui_lock_update_mask(void) {
   if (!lbl_lock_mask) return;
-  // «* * - -»: сколько цифр уже введено
+  // "* * - -": how many digits have been entered
   char buf[LOCK_CODE_LEN * 2];
   int n = 0;
   for (int i = 0; i < LOCK_CODE_LEN; i++) {
@@ -210,7 +212,7 @@ static void ui_lock_set_status(const char *txt, lv_color_t color) {
   lv_obj_set_style_text_color(lbl_lock_status, color, 0);
 }
 
-// Бейдж на спидометре + подсказка на вкладке замка
+// Badge on the speedometer plus the hint on the lock tab
 static void ui_refresh_lock(void) {
   if (lbl_lock_badge) {
     if (lock_on) lv_obj_clear_flag(lbl_lock_badge, LV_OBJ_FLAG_HIDDEN);
@@ -236,18 +238,18 @@ static void ui_lock_key_cb(lv_event_t *e) {
     return;
   }
 
-  // Код набран целиком: тот же код и запирает, и отпирает
+  // The full code is entered: the same code both locks and unlocks
   const bool ok = strcmp(lock_entry, LOCK_CODE) == 0;
   ui_lock_reset_entry();
   if (ok) {
     lock_on = !lock_on;
-    ui_refresh_lock();  // сам напишет актуальный статус и покажет/спрячет бейдж
+    ui_refresh_lock();  // writes the current status and shows/hides the badge itself
   } else {
     ui_lock_set_status("WRONG CODE", lv_palette_main(LV_PALETTE_RED));
   }
 }
 
-// ====== Меню настроек (шестерёнка на спидометре) ======
+// ====== Settings menu (the gear button on the speedometer) ======
 static void ui_refresh_debug_btn(void) {
   if (btn_debug) {
     if (debug_enabled) lv_obj_add_state(btn_debug, LV_STATE_CHECKED);
@@ -259,12 +261,12 @@ static void ui_refresh_debug_btn(void) {
   }
 }
 
-// Набор вкладок фиксируется в момент сборки (в LVGL 8.3 нет lv_tabview_remove_tab),
-// поэтому переключатель диагностики пересобирает весь UI. Только через lv_async_call:
-// удалять дерево из колбэка кнопки, которая в нём же и живёт, нельзя.
+// The tab set is fixed at build time (LVGL 8.3 has no lv_tabview_remove_tab), so the
+// diagnostics toggle rebuilds the whole UI. Only via lv_async_call: the tree cannot be
+// deleted from the callback of a button that lives inside it.
 static void ui_rebuild_async_cb(void *unused) {
   LV_UNUSED(unused);
-  lv_obj_clean(lv_layer_top());  // оверлей настроек живёт там
+  lv_obj_clean(lv_layer_top());  // the settings overlay lives there
   lv_obj_clean(lv_scr_act());
   ui_build();
 }
@@ -286,24 +288,25 @@ static void ui_settings_close_cb(lv_event_t *e) {
   if (settings_modal) lv_obj_add_flag(settings_modal, LV_OBJ_FLAG_HIDDEN);
 }
 
-// Двойной тап по спидометру — быстрый переключатель лимита, чтобы не листать
-// на вкладку 1 на ходу. Двойного клика в LVGL нет, ловим два CLICKED подряд.
+// A double tap on the speedometer is a quick limit toggle, so there is no need to
+// swipe to tab 1 while riding. LVGL has no double click, so two CLICKED events in a
+// row are caught instead.
 #define DOUBLE_TAP_MS 400
 static void ui_meter_click_cb(lv_event_t *e) {
   LV_UNUSED(e);
   static uint32_t last_click = 0;
   uint32_t now = lv_tick_get();
-  // last_click == 0 — первый тап за всё время; lv_tick_elaps() учитывает
-  // переполнение счётчика тиков.
+  // last_click == 0 means the very first tap; lv_tick_elaps() accounts for the tick
+  // counter wrapping around.
   if (last_click != 0 && lv_tick_elaps(last_click) < DOUBLE_TAP_MS) {
-    ui_set_limit25(!limit25_on);  // сам обновит кнопку на вкладке 1 и бейдж
-    last_click = 0;               // третий тап не считаем за новую пару
+    ui_set_limit25(!limit25_on);  // updates the button on tab 1 and the badge itself
+    last_click = 0;               // a third tap does not count as a new pair
     return;
   }
   last_click = now;
 }
 
-// Подписи тока: крупное «сколько выставлено» + «сколько реально уехало в VESC»
+// Current labels: a large "what is set" plus "what actually went to the VESC"
 static void ui_refresh_current(void) {
   char buf[32];
   if (lbl_current_val) {
@@ -318,9 +321,9 @@ static void ui_refresh_current(void) {
     lv_obj_set_style_text_color(lbl_current_applied,
                                (current_applied > 0.01f) ? COLOR_ACCENT : COLOR_DIM, 0);
   }
-  // Кнопка: пока в VESC уехало ровно то, что выставлено, следующее нажатие
-  // выключает ток — так и подписываем (OFF, красная). Если setpoint успели
-  // покрутить, кнопка снова становится UPDATE и применяет новое значение.
+  // Button: while exactly what is set has been sent to the VESC, the next press turns
+  // the current off - and it is labelled accordingly (OFF, red). If the setpoint has
+  // been changed since, the button becomes UPDATE again and applies the new value.
   const bool armed = current_applied > 0.01f &&
                      fabsf(current_applied - current_setpoint) < 0.005f;
   if (lbl_current_update) lv_label_set_text(lbl_current_update, armed ? "OFF" : "UPDATE");
@@ -342,8 +345,8 @@ static void ui_refresh_current(void) {
   }
 }
 
-// Кнопки «−» и «+»: шаг передаём через user_data. Реагируем и на удержание,
-// чтобы не тыкать 60 раз.
+// The "-" and "+" buttons: the step is passed through user_data. Long presses are
+// handled too, so there is no need to tap 60 times.
 static void ui_current_step_cb(lv_event_t *e) {
   const float step = (float)(intptr_t)lv_event_get_user_data(e) * CURRENT_STEP_A;
   float v = current_setpoint + step;
@@ -353,9 +356,10 @@ static void ui_current_step_cb(lv_event_t *e) {
   ui_refresh_current();
 }
 
-// UPDATE: только здесь setpoint становится тем, что loop() шлёт в VESC.
-// Повторное нажатие (когда applied уже равен setpoint) выключает ток: applied = 0,
-// loop() перестаёт слать setCurrent и через таймаут VESC (~1с) газ снова у ручки.
+// UPDATE: only here does the setpoint become what loop() sends to the VESC.
+// A second press (when applied already equals the setpoint) turns the current off:
+// applied = 0, loop() stops sending setCurrent and after the VESC timeout (~1 s) the
+// throttle is back in control.
 static void ui_current_update_cb(lv_event_t *e) {
   LV_UNUSED(e);
   const bool armed = current_applied > 0.01f &&
@@ -364,8 +368,8 @@ static void ui_current_update_cb(lv_event_t *e) {
   ui_refresh_current();
 }
 
-// Один знак после точки со знаком минуса (рекуперация): целое/дробное считаем
-// по модулю, иначе значения в диапазоне (-1..0) потеряли бы «-».
+// One decimal place with a minus sign (regeneration): the integer/fractional parts are
+// computed from the magnitude, otherwise values in (-1..0) would lose the "-".
 static void ui_format_amps(char *buf, size_t n, float a) {
   float mag = fabsf(a);
   int whole = (int)mag;
@@ -373,8 +377,8 @@ static void ui_format_amps(char *buf, size_t n, float a) {
   snprintf(buf, n, "%s%d.%d A", (a < -0.05f) ? "-" : "", whole, frac);
 }
 
-// Один лейбл на параметр: во время замера в нём стоит максимум (зелёным),
-// в обычном режиме — сглаженное текущее значение (белым).
+// One label per value: during a measurement it holds the maximum (in green), and in
+// normal mode the smoothed current value (in white).
 static void ui_refresh_currents(void) {
   char buf[24];
   const bool peak = peak_measuring;
@@ -395,13 +399,14 @@ static void ui_refresh_currents(void) {
   }
 }
 
-// Лейбл кВт под спидометром: во время замера — максимум (зелёным), иначе
-// сглаженная текущая мощность (цветом кольца). Кольцо при этом всегда живое —
-// это указатель, а не показание, и по нему видно, что происходит сейчас.
+// The kW label under the speedometer: during a measurement the maximum (in green),
+// otherwise the smoothed current power (in the ring's colour). The ring itself is
+// always live - it is an indicator rather than a reading, and it shows what is
+// happening right now.
 static void ui_refresh_power(void) {
   if (!lbl_power) return;
   const bool peak = peak_measuring;
-  // Целые/дробные части руками: %f в lv_snprintf может быть отключён в lv_conf.h
+  // Integer/fractional parts by hand: %f in lv_snprintf may be disabled in lv_conf.h
   float kw = (peak ? peak_power_w : power_ema) / 1000.0f;
   bool neg = kw < 0.0f;
   if (neg) kw = -kw;
@@ -411,7 +416,7 @@ static void ui_refresh_power(void) {
   char buf[24];
   lv_snprintf(buf, sizeof(buf), "%s%d.%02d kW", neg ? "-" : "", whole, frac);
   lv_label_set_text(lbl_power, buf);
-  // Перебор по мощности важнее «режима замера», поэтому красный перебивает зелёный
+  // Exceeding the power limit matters more than "measuring mode", so red beats green
   const float shown_w = peak ? peak_power_w : power_ema;
   lv_color_t color = (shown_w > POWER_ALERT_W) ? lv_palette_main(LV_PALETTE_RED)
                                                : (peak ? COLOR_ACCENT : COLOR_POWER);
@@ -421,7 +426,7 @@ static void ui_refresh_power(void) {
 static void ui_peak_btn_cb(lv_event_t *e) {
   LV_UNUSED(e);
   bool on = btn_peak && lv_obj_has_state(btn_peak, LV_STATE_CHECKED);
-  // Включение — всегда новый замер с нуля; выключение оставляет цифры на экране.
+  // Turning it on always starts a fresh measurement; turning it off leaves the numbers.
   if (on && !peak_measuring) {
     peak_motor_a = 0.0f;
     peak_input_a = 0.0f;
@@ -432,8 +437,8 @@ static void ui_peak_btn_cb(lv_event_t *e) {
   ui_refresh_power();
 }
 
-// Общий стиль страницы вкладки: чёрный фон, вертикальный флекс, без прокрутки
-// (прокрутка нужна только контейнеру самого tabview — им и листаем свайпом).
+// Shared tab page style: black background, vertical flex, no scrolling (only the
+// tabview's own container needs to scroll - that is what the swipe pages).
 static void ui_style_page(lv_obj_t *page, lv_coord_t pad, lv_coord_t row_gap,
                           lv_flex_align_t main_align) {
   lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE);
@@ -447,8 +452,8 @@ static void ui_style_page(lv_obj_t *page, lv_coord_t pad, lv_coord_t row_gap,
   lv_obj_set_flex_align(page, main_align, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 }
 
-// Строка отчёта: серая подпись сверху, крупное значение под ней.
-// Возвращает лейбл значения.
+// Report row: a grey caption on top with a large value below it.
+// Returns the value label.
 static lv_obj_t *ui_report_row(lv_obj_t *parent, const char *caption, const char *initial) {
   lv_obj_t *box = lv_obj_create(parent);
   lv_obj_remove_style_all(box);
@@ -469,8 +474,8 @@ static lv_obj_t *ui_report_row(lv_obj_t *parent, const char *caption, const char
   return val;
 }
 
-// Два компактных показания в один ряд — экономит высоту на вкладке отчёта,
-// где полноразмерных строк ui_report_row() больше уже не влезает.
+// Two compact readings in a single row - saves height on the report tab, where no
+// more full-size ui_report_row() rows would fit.
 static void ui_report_pair(lv_obj_t *parent, const char *cap_a, const char *cap_b,
                            lv_obj_t **out_a, lv_obj_t **out_b) {
   lv_obj_t *row = lv_obj_create(parent);
@@ -503,10 +508,10 @@ static void ui_report_pair(lv_obj_t *parent, const char *cap_a, const char *cap_
   }
 }
 
-// Все указатели на виджеты — статики, а ui_build() может вызываться повторно
-// (пересборка при переключении диагностики). Обнуляем их до сборки: часть виджетов
-// (вкладка диагностики) существует не всегда, и старые указатели после
-// lv_obj_clean() висели бы на удалённых объектах.
+// All widget pointers are statics, and ui_build() can be called again (the rebuild on
+// the diagnostics toggle). They are cleared before building: some widgets (the
+// diagnostics tab) do not always exist, and after lv_obj_clean() the old pointers would
+// dangle on deleted objects.
 static void ui_reset_refs(void) {
   lbl_batt = lbl_volt = lbl_speed = NULL;
   meter_speed = NULL;
@@ -529,9 +534,9 @@ static void ui_reset_refs(void) {
 void ui_build(void) {
   ui_reset_refs();
 
-  // Вкладки листаются свайпом (кнопки таба спрятаны, высота 0):
-  // 0 — ток мотора (setCurrent), 1 — лимит 25 км/ч, 2 — спидометр (по умолчанию),
-  // 3 — отчёт о пробеге, 4 — замок, 5 — диагностика (только при debug_enabled).
+  // Tabs are paged by swiping (the tab buttons are hidden, height 0):
+  // 0 = motor current (setCurrent), 1 = 25 km/h limit, 2 = speedometer (default),
+  // 3 = trip report, 4 = lock, 5 = diagnostics (only when debug_enabled).
   tab_count = debug_enabled ? TAB_MAX : TAB_MAX - 1;
   lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), 0);
   tabview = lv_tabview_create(lv_scr_act(), LV_DIR_TOP, 0);
@@ -553,7 +558,7 @@ void ui_build(void) {
   ui_style_page(tab_lock, 6, 6, LV_FLEX_ALIGN_CENTER);
   if (tab_diag) ui_style_page(tab_diag, 6, 0, LV_FLEX_ALIGN_SPACE_EVENLY);
 
-  // ====== Самая левая вкладка: ток мотора (setCurrent) ======
+  // ====== Leftmost tab: motor current (setCurrent) ======
   lv_obj_t *lbl_cur_title = lv_label_create(tab_current);
   lv_label_set_text(lbl_cur_title, "MOTOR CURRENT");
   lv_obj_set_style_text_color(lbl_cur_title, COLOR_DIM, 0);
@@ -563,7 +568,7 @@ void ui_build(void) {
   lv_obj_set_style_text_color(lbl_current_val, lv_color_white(), 0);
   lv_obj_set_style_text_font(lbl_current_val, &lv_font_montserrat_48, 0);
 
-  // Ряд кнопок «−» / «+»
+  // Row with the "-" / "+" buttons
   lv_obj_t *cur_row = lv_obj_create(tab_current);
   lv_obj_remove_style_all(cur_row);
   lv_obj_set_size(cur_row, LV_PCT(100), LV_SIZE_CONTENT);
@@ -582,7 +587,7 @@ void ui_build(void) {
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x444444), LV_STATE_PRESSED);
     lv_obj_set_style_border_width(btn, 2, 0);
     lv_obj_set_style_border_color(btn, lv_color_hex(0x555555), 0);
-    // CLICKED + LONG_PRESSED_REPEAT: удержание крутит значение быстро
+    // CLICKED + LONG_PRESSED_REPEAT: holding the button ramps the value quickly
     lv_obj_add_event_cb(btn, ui_current_step_cb, LV_EVENT_CLICKED, (void *)(intptr_t)step_dir[i]);
     lv_obj_add_event_cb(btn, ui_current_step_cb, LV_EVENT_LONG_PRESSED_REPEAT,
                         (void *)(intptr_t)step_dir[i]);
@@ -594,8 +599,8 @@ void ui_build(void) {
     lv_obj_center(lbl);
   }
 
-  // UPDATE — отправить выставленное значение в VESC; повторное нажатие выключает ток
-  // (цвет и подпись кнопки ведёт ui_refresh_current())
+  // UPDATE sends the configured value to the VESC; a second press turns the current
+  // off (the button's colour and label are driven by ui_refresh_current())
   btn_current_update = lv_btn_create(tab_current);
   lv_obj_set_size(btn_current_update, 210, 52);
   lv_obj_set_style_radius(btn_current_update, 12, 0);
@@ -610,7 +615,7 @@ void ui_build(void) {
 
   ui_refresh_current();
 
-  // ====== Вкладка «влево»: ограничение скорости 25 км/ч ======
+  // ====== Tab to the left: 25 km/h speed limit ======
   lv_obj_t *lbl_limit_title = lv_label_create(tab_limit);
   lv_label_set_text(lbl_limit_title, "SPEED LIMIT");
   lv_obj_set_style_text_color(lbl_limit_title, COLOR_DIM, 0);
@@ -626,7 +631,7 @@ void ui_build(void) {
   lv_obj_set_style_border_color(btn_limit, lv_color_hex(0x555555), 0);
   lv_obj_set_style_border_color(btn_limit, COLOR_ACCENT, LV_STATE_CHECKED);
   lv_obj_add_event_cb(btn_limit, ui_limit_btn_cb, LV_EVENT_VALUE_CHANGED, NULL);
-  // Состояние по умолчанию — выключено (LV_STATE_CHECKED не выставляем)
+  // Default state is off (LV_STATE_CHECKED is not set)
 
   lv_obj_t *lbl_limit_val = lv_label_create(btn_limit);
   lv_label_set_text(lbl_limit_val, "25 km/h");
@@ -643,35 +648,35 @@ void ui_build(void) {
   lv_obj_set_style_text_color(lbl_limit_hint, COLOR_DIM, 0);
   lv_obj_set_style_text_font(lbl_limit_hint, &lv_font_montserrat_14, 0);
 
-  // Не просто refresh: при пересборке UI (тумблер диагностики) кнопка создаётся
-  // заново и её LV_STATE_CHECKED надо вернуть из состояния, а не наоборот.
+  // Not just a refresh: on a UI rebuild (the diagnostics toggle) the button is created
+  // anew and its LV_STATE_CHECKED has to be restored from the state, not the other way.
   ui_set_limit25(limit25_on);
 
-  // ====== Вкладка «вправо»: отчёт о пробеге и стоимости (вертикально) ======
+  // ====== Tab to the right: trip and cost report (vertical) ======
   lbl_tachometer = ui_report_row(tab_trip, "TRIP (SINCE BOOT)", "0.0 km");
   lbl_tachometerAbs = ui_report_row(tab_trip, "TOTAL", "0 km");
   lbl_cost = ui_report_row(tab_trip, "COST, ILS", "0.0");
-  // Токи снизу: MOTOR — фазный (момент), BATTERY — входной (мощность).
-  // Во время замера в этих же лейблах показывается максимум (зелёным).
+  // Currents at the bottom: MOTOR is the phase current (torque), BATTERY the input
+  // current (power). During a measurement these same labels show the maximum (green).
   ui_report_pair(tab_trip, "MOTOR", "BATTERY", &lbl_cur_motor, &lbl_cur_input);
 
-  // Кнопка замера пиков. Токи скачут быстрее, чем читаются с экрана, поэтому
-  // максимум копится в фоне, а не подсматривается глазами.
+  // Peak measurement button. The currents change faster than they can be read off the
+  // screen, so the maximum is accumulated in the background instead of being eyeballed.
   btn_peak = lv_btn_create(tab_trip);
   lv_obj_set_size(btn_peak, 200, 38);
   lv_obj_add_flag(btn_peak, LV_OBJ_FLAG_CHECKABLE);
   lv_obj_set_style_radius(btn_peak, 10, 0);
-  lv_obj_set_style_bg_color(btn_peak, lv_color_hex(0x2b2b2b), 0);                 // выключено
-  lv_obj_set_style_bg_color(btn_peak, lv_color_hex(0x1f7a1f), LV_STATE_CHECKED);  // идёт замер
+  lv_obj_set_style_bg_color(btn_peak, lv_color_hex(0x2b2b2b), 0);                 // off
+  lv_obj_set_style_bg_color(btn_peak, lv_color_hex(0x1f7a1f), LV_STATE_CHECKED);  // measuring
   lv_obj_set_style_border_width(btn_peak, 2, 0);
   lv_obj_set_style_border_color(btn_peak, lv_color_hex(0x555555), 0);
   lv_obj_set_style_border_color(btn_peak, COLOR_ACCENT, LV_STATE_CHECKED);
   lv_obj_add_event_cb(btn_peak, ui_peak_btn_cb, LV_EVENT_VALUE_CHANGED, NULL);
-  // Пересборка UI не должна прерывать идущий замер — возвращаем кнопке состояние
+  // A UI rebuild must not interrupt an ongoing measurement - restore the button state
   if (peak_measuring) lv_obj_add_state(btn_peak, LV_STATE_CHECKED);
 
-  // Шестерёнка настроек — в свободном верхнем углу вкладки отчёта. IGNORE_LAYOUT,
-  // чтобы не влезать в флекс-колонку страницы (подписи по центру её не задевают).
+  // The settings gear sits in the free top corner of the report tab. IGNORE_LAYOUT so
+  // it stays out of the page's flex column (the centred labels do not touch it).
   lv_obj_t *btn_settings = lv_btn_create(tab_trip);
   lv_obj_add_flag(btn_settings, LV_OBJ_FLAG_IGNORE_LAYOUT);
   lv_obj_set_size(btn_settings, 34, 34);
@@ -701,11 +706,11 @@ void ui_build(void) {
     lv_obj_set_style_text_font(lbl_debbug, &lv_font_montserrat_14, 0);
   }
 
-  // ====== Центральная вкладка: спидометр ======
+  // ====== Centre tab: speedometer ======
   lv_obj_t *root = tab_dash;
 
-  // ====== Блок 1: Speed (спидометр) ======
-  // Спидометр: круглая шкала со стрелкой и цветной дугой
+  // ====== Block 1: Speed (speedometer) ======
+  // Speedometer: a circular scale with a needle and a coloured arc
   meter_speed = lv_meter_create(root);
   lv_obj_clear_flag(meter_speed, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_size(meter_speed, METER_SIZE, METER_SIZE);
@@ -713,38 +718,38 @@ void ui_build(void) {
   lv_obj_set_style_border_width(meter_speed, 0, LV_PART_MAIN);
   lv_obj_set_style_pad_all(meter_speed, METER_PAD, LV_PART_MAIN);
   lv_obj_set_style_text_font(meter_speed, &lv_font_montserrat_12, LV_PART_TICKS);
-  // Двойной тап по циферблату включает/выключает лимит 25 км/ч. Свайп между
-  // вкладками не ломается: спидометр не прокручиваемый, жест уходит в tabview,
-  // а CLICKED после протяжки LVGL не присылает.
+  // A double tap on the dial toggles the 25 km/h limit. Swiping between tabs still
+  // works: the speedometer is not scrollable, so the gesture goes to the tabview, and
+  // LVGL does not emit CLICKED after a drag.
   lv_obj_add_flag(meter_speed, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(meter_speed, ui_meter_click_cb, LV_EVENT_CLICKED, NULL);
 
   lv_meter_scale_t *scale = lv_meter_add_scale(meter_speed);
-  // 56 мелких делений (0..55), каждое 5-е крупное с подписью
+  // 56 minor ticks (0..55), every 5th is a major tick with a label
   lv_meter_set_scale_ticks(meter_speed, scale, 56, 2, 6, lv_color_hex(0x808080));
   lv_meter_set_scale_major_ticks(meter_speed, scale, 5, 3, 11, lv_color_white(), 12);
-  // диапазон 0..40 км/ч, дуга 270°, начало под углом 135° (снизу-слева)
+  // range 0..40 km/h, a 270 degree arc starting at 135 degrees (bottom left)
   lv_meter_set_scale_range(meter_speed, scale, 0, SPEED_MAX_KMH, 270, 135);
 
-  // Цветная дуга, растущая вместе со скоростью
+  // Coloured arc that grows with the speed
   arc_speed = lv_meter_add_arc(meter_speed, scale, 5, lv_color_hex(0x51f051), 0);
   lv_meter_set_indicator_start_value(meter_speed, arc_speed, 0);
   lv_meter_set_indicator_end_value(meter_speed, arc_speed, 0);
 
-  // Стрелка
+  // Needle
   needle_speed = lv_meter_add_needle_line(meter_speed, scale, 4, lv_color_hex(0x51f051), -8);
   lv_meter_set_indicator_value(meter_speed, needle_speed, 0);
 
-  // Кольцо мощности на колесо: синяя линия по внешнему краю спидометра.
-  // Геометрия повторяет шкалу (старт 135°, 270° по часовой), чтобы кольцо
-  // читалось как продолжение циферблата. Ребёнок спидометра — так центр
-  // совпадает автоматически, без ручного выравнивания.
+  // Wheel power ring: a blue line along the outer edge of the speedometer.
+  // The geometry mirrors the scale (start at 135 degrees, 270 degrees clockwise) so the
+  // ring reads as a continuation of the dial. It is a child of the speedometer, so the
+  // centres line up automatically without manual alignment.
   arc_power = lv_arc_create(meter_speed);
-  lv_obj_remove_style(arc_power, NULL, LV_PART_KNOB);  // ручку не показываем
+  lv_obj_remove_style(arc_power, NULL, LV_PART_KNOB);  // do not show the knob
   lv_obj_set_size(arc_power, METER_SIZE - 2, METER_SIZE - 2);
   lv_obj_center(arc_power);
-  // Не перехватываем касания: двойной тап по циферблату и свайп вкладок
-  // должны доходить до спидометра/tabview под кольцом.
+  // Do not intercept touches: the double tap on the dial and the tab swipe must reach
+  // the speedometer/tabview underneath the ring.
   lv_obj_clear_flag(arc_power, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_clear_flag(arc_power, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_style_pad_all(arc_power, 0, LV_PART_MAIN);
@@ -756,7 +761,7 @@ void ui_build(void) {
   lv_arc_set_range(arc_power, 0, POWER_MAX_W);
   lv_arc_set_value(arc_power, 0);
 
-  // Число скорости в центре спидометра
+  // Speed number in the centre of the speedometer
   lbl_speed = lv_label_create(meter_speed);
   lv_label_set_text(lbl_speed, "--");
   lv_obj_set_style_text_color(lbl_speed, lv_color_white(), 0);
@@ -764,22 +769,22 @@ void ui_build(void) {
   lv_obj_set_style_text_align(lbl_speed, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_align(lbl_speed, LV_ALIGN_CENTER, 0, -10);
 
-  // Подпись "km/h" под числом
+  // The "km/h" caption below the number
   lv_obj_t *lbl_speed_unit = lv_label_create(meter_speed);
   lv_label_set_text(lbl_speed_unit, "km/h");
   lv_obj_set_style_text_color(lbl_speed_unit, lv_color_hex(0xaaaaaa), 0);
   lv_obj_set_style_text_font(lbl_speed_unit, &lv_font_montserrat_14, 0);
   lv_obj_align(lbl_speed_unit, LV_ALIGN_CENTER, 0, 28);
 
-  // Мощность в кВт — в нижнем разрыве циферблата (там шкалы нет), цветом кольца
+  // Power in kW - in the dial's bottom gap (no scale there), in the ring's colour
   lbl_power = lv_label_create(meter_speed);
   lv_label_set_text(lbl_power, "0.00 kW");
   lv_obj_set_style_text_color(lbl_power, COLOR_POWER, 0);
   lv_obj_set_style_text_font(lbl_power, &lv_font_montserrat_18, 0);
-  // +58: ниже подписей крайних делений шкалы (0 и 55), чтобы не наезжать на них
+  // +58: below the labels of the outermost ticks (0 and 55) so it does not overlap them
   lv_obj_align(lbl_power, LV_ALIGN_CENTER, 0, 58);
 
-  // ====== Блок 2: строка Battery % / Voltage / Temp ======
+  // ====== Block 2: the Battery % / Voltage / Temp row ======
   lv_obj_t *info = lv_obj_create(root);
   lv_obj_clear_flag(info, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_style_bg_opa(info, LV_OPA_TRANSP, 0);
@@ -791,8 +796,8 @@ void ui_build(void) {
   lv_obj_set_layout(info, LV_LAYOUT_FLEX);
   lv_obj_set_flex_flow(info, LV_FLEX_FLOW_ROW);
   lv_obj_set_flex_align(info,
-                        LV_FLEX_ALIGN_SPACE_BETWEEN,  // по X
-                        LV_FLEX_ALIGN_CENTER,         // по Y
+                        LV_FLEX_ALIGN_SPACE_BETWEEN,  // along X
+                        LV_FLEX_ALIGN_CENTER,         // along Y
                         LV_FLEX_ALIGN_CENTER);
 
   // Battery %
@@ -807,14 +812,14 @@ void ui_build(void) {
   lv_obj_set_style_text_color(lbl_volt, lv_color_white(), 0);
   lv_obj_set_style_text_font(lbl_volt, &lv_font_montserrat_22, 0);
 
-  // Температура контроллера (подпись "Temp" убрали — в 240px ширины не нужна)
+  // Controller temperature (the "Temp" caption was dropped - not needed in 240 px)
   lbl_temp_val = lv_label_create(info);
   lv_label_set_text(lbl_temp_val, "--°C");
   lv_obj_set_style_text_color(lbl_temp_val, lv_color_white(), 0);
   lv_obj_set_style_text_font(lbl_temp_val, &lv_font_montserrat_22, 0);
 
-  // Бейджи активных режимов — видны на спидометре, чтобы состояние
-  // не приходилось искать на соседних вкладках
+  // Badges for the active modes - shown on the speedometer so the state does not have
+  // to be looked up on the neighbouring tabs
   lv_obj_t *badges = lv_obj_create(root);
   lv_obj_remove_style_all(badges);
   lv_obj_set_size(badges, LV_PCT(100), LV_SIZE_CONTENT);
@@ -835,16 +840,16 @@ void ui_build(void) {
   lv_obj_set_style_text_font(lbl_current_badge, &lv_font_montserrat_14, 0);
   lv_obj_add_flag(lbl_current_badge, LV_OBJ_FLAG_HIDDEN);
 
-  // Замочек: в LVGL 8.3 среди встроенных символов замка нет, поэтому словом
+  // Padlock: LVGL 8.3 has no built-in lock symbol, so a word is used instead
   lbl_lock_badge = lv_label_create(badges);
   lv_label_set_text(lbl_lock_badge, "LOCKED");
   lv_obj_set_style_text_color(lbl_lock_badge, lv_palette_main(LV_PALETTE_RED), 0);
   lv_obj_set_style_text_font(lbl_lock_badge, &lv_font_montserrat_14, 0);
   lv_obj_add_flag(lbl_lock_badge, LV_OBJ_FLAG_HIDDEN);
 
-  // ====== Вкладка замка: клавиатура 1..9 ======
-  // Заголовок и маска сверху заодно оставляют полосу, с которой удобно начать
-  // свайп — сетка кнопок на всю страницу мешала бы листать вкладки.
+  // ====== Lock tab: 1..9 keypad ======
+  // The title and the mask on top also leave a strip that is convenient to start a
+  // swipe from - a full-page button grid would get in the way of paging tabs.
   lv_obj_t *lbl_lock_title = lv_label_create(tab_lock);
   lv_label_set_text(lbl_lock_title, "LOCK");
   lv_obj_set_style_text_color(lbl_lock_title, COLOR_DIM, 0);
@@ -880,12 +885,12 @@ void ui_build(void) {
   ui_lock_reset_entry();
   ui_refresh_lock();
 
-  // ====== Вкладка диагностики (только при включённом режиме) ======
+  // ====== Diagnostics tab (only when the mode is on) ======
   if (tab_diag) {
     lbl_diag_fault = ui_report_row(tab_diag, "VESC FAULT", "NONE");
     lbl_diag_last = ui_report_row(tab_diag, "LAST FAULT (SINCE BOOT)", "NONE");
-    // Имена аварий длинные («GATE DRV UNDER VOLT») — переносим по словам,
-    // иначе строка уезжает за края 240-пиксельного экрана.
+    // Fault names are long ("GATE DRV UNDER VOLT"), so they are word-wrapped -
+    // otherwise the line runs off the edges of the 240 px screen.
     lv_obj_t *const diag_wrap[2] = { lbl_diag_fault, lbl_diag_last };
     for (int i = 0; i < 2; i++) {
       lv_obj_set_width(diag_wrap[i], LV_PCT(100));
@@ -902,13 +907,13 @@ void ui_build(void) {
     lv_obj_set_style_text_font(lbl_diag_link, &lv_font_montserrat_14, 0);
   }
 
-  // ====== Меню настроек: оверлей поверх всего (включая точки вкладок) ======
+  // ====== Settings menu: an overlay above everything (including the tab dots) ======
   settings_modal = lv_obj_create(lv_layer_top());
   lv_obj_remove_style_all(settings_modal);
   lv_obj_set_size(settings_modal, LV_PCT(100), LV_PCT(100));
   lv_obj_set_style_bg_color(settings_modal, lv_color_black(), 0);
   lv_obj_set_style_bg_opa(settings_modal, LV_OPA_70, 0);
-  // Кликабельная подложка: гасит нажатия по UI под меню
+  // Clickable backdrop: swallows presses on the UI beneath the menu
   lv_obj_add_flag(settings_modal, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_clear_flag(settings_modal, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(settings_modal, LV_OBJ_FLAG_HIDDEN);
@@ -932,7 +937,7 @@ void ui_build(void) {
   lv_obj_set_style_text_color(lbl_settings_title, COLOR_DIM, 0);
   lv_obj_set_style_text_font(lbl_settings_title, &lv_font_montserrat_18, 0);
 
-  // Тумблер диагностики: добавляет/убирает последнюю вкладку (через пересборку UI)
+  // Diagnostics toggle: adds/removes the last tab (through a UI rebuild)
   btn_debug = lv_btn_create(panel);
   lv_obj_set_size(btn_debug, 180, 52);
   lv_obj_add_flag(btn_debug, LV_OBJ_FLAG_CHECKABLE);
@@ -961,7 +966,7 @@ void ui_build(void) {
 
   ui_refresh_debug_btn();
 
-  // ====== Индикатор текущей вкладки (точки внизу) ======
+  // ====== Current tab indicator (dots at the bottom) ======
   lv_obj_t *dot_box = lv_obj_create(lv_scr_act());
   lv_obj_remove_style_all(dot_box);
   lv_obj_set_size(dot_box, 15 * tab_count, 12);
@@ -980,12 +985,12 @@ void ui_build(void) {
     lv_obj_set_style_bg_opa(dots[i], LV_OPA_COVER, 0);
   }
 
-  // Стартуем на спидометре: влево — лимит и ток, вправо — отчёт
+  // Start on the speedometer: limit and current to the left, the report to the right
   lv_tabview_set_act(tabview, TAB_DASH, LV_ANIM_OFF);
   ui_update_dots(TAB_DASH);
 }
 
-// Хелперы для обновления значений:
+// Helpers for updating the values:
 void ui_set_battery(float volts) {
   uint8_t percent = calcBatteryPercent(volts);
 
@@ -1016,18 +1021,18 @@ void ui_set_battery(float volts) {
   lv_label_set_text(lbl_volt, buf);
 }
 
-// Текущее (анимируемое) положение стрелки в десятых долях км/ч.
-// Шкала спидометра целочисленная (0..SPEED_MAX_KMH), поэтому храним ×10,
-// чтобы анимация шла плавно и без «ступенек».
+// The current (animated) needle position in tenths of km/h.
+// The speedometer scale is integer (0..SPEED_MAX_KMH), so the value is kept x10 to make
+// the animation smooth and free of steps.
 static int32_t needle_cur_x10 = 0;
-// Сглаженная скорость (экспоненциальное среднее) — гасит шум телеметрии VESC.
+// Smoothed speed (exponential moving average) - damps the VESC telemetry noise.
 static float speed_ema = 0.0f;
 static bool speed_ema_init = false;
 
-// Колбэк анимации: получает значение в десятых км/ч, двигает стрелку и дугу.
+// Animation callback: gets a value in tenths of km/h and moves the needle and the arc.
 static void speed_anim_cb(void *var, int32_t x10) {
   needle_cur_x10 = x10;
-  int32_t v = (x10 + 5) / 10;  // округляем до целого км/ч для шкалы
+  int32_t v = (x10 + 5) / 10;  // round to whole km/h for the scale
   if (meter_speed && needle_speed) {
     lv_meter_set_indicator_value(meter_speed, needle_speed, v);
   }
@@ -1038,14 +1043,14 @@ static void speed_anim_cb(void *var, int32_t x10) {
 
 void ui_set_speed(float rpm) {
   if (!lbl_speed) return;
-  float speed = erpm_to_kmh(rpm, POLE_PAIRS, WHEEL_CIRC_M);  // или "%.0f km/h"
+  float speed = erpm_to_kmh(rpm, POLE_PAIRS, WHEEL_CIRC_M);  // or "%.0f km/h"
 
-  // Сглаживаем скорость, чтобы стрелка не дёргалась от шума телеметрии.
+  // Smooth the speed so the needle does not twitch on telemetry noise.
   if (!speed_ema_init) {
     speed_ema = speed;
     speed_ema_init = true;
   } else {
-    speed_ema += 0.35f * (speed - speed_ema);  // коэффициент 0.35: компромисс отклик/плавность
+    speed_ema += 0.35f * (speed - speed_ema);  // coefficient 0.35: a response/smoothness compromise
   }
   speed = speed_ema;
 
@@ -1055,7 +1060,7 @@ void ui_set_speed(float rpm) {
   sprintf(buf, "%d.%d", whole, abs(frac));
   lv_label_set_text(lbl_speed, buf);
 
-  // Выше порога — весь циферблат (цифра, стрелка, дуга) красный, иначе зелёный/белый.
+  // Above the threshold the whole dial (number, needle, arc) is red, otherwise green/white.
   lv_color_t speed_color = (speed > SPEED_ALERT_KMH) ? lv_palette_main(LV_PALETTE_RED)
                                                       : lv_color_hex(0x51f051);
   lv_obj_set_style_text_color(lbl_speed, (speed > SPEED_ALERT_KMH) ? lv_palette_main(LV_PALETTE_RED)
@@ -1065,21 +1070,21 @@ void ui_set_speed(float rpm) {
   if (arc_speed) arc_speed->type_data.arc.color = speed_color;
   if (meter_speed) lv_obj_invalidate(meter_speed);
 
-  // Целевое положение стрелки в десятых км/ч, с клампом по диапазону шкалы.
+  // Target needle position in tenths of km/h, clamped to the scale's range.
   int32_t target_x10 = (int32_t)(speed * 10.0f + 0.5f);
   if (target_x10 < 0) target_x10 = 0;
   if (target_x10 > SPEED_MAX_KMH * 10) target_x10 = SPEED_MAX_KMH * 10;
 
   if (meter_speed && needle_speed) {
-    // Плавно доводим стрелку от текущего положения к целевому.
-    // Повторный старт с тем же (var, exec_cb) заменяет предыдущую анимацию,
-    // поэтому стрелка всегда «догоняет» последнее значение без рывков.
+    // Ease the needle from its current position to the target.
+    // Restarting with the same (var, exec_cb) replaces the previous animation, so the
+    // needle always catches up with the latest value without jerking.
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, meter_speed);
     lv_anim_set_exec_cb(&a, speed_anim_cb);
     lv_anim_set_values(&a, needle_cur_x10, target_x10);
-    lv_anim_set_time(&a, 300);  // чуть длиннее интервала опроса — движение непрерывное
+    lv_anim_set_time(&a, 300);  // slightly longer than the poll interval - continuous motion
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
   }
@@ -1093,21 +1098,21 @@ void ui_set_temp(float celsius) {
   }
 
   char buf[16];
-  int whole = (int)celsius;                         // целая часть
-  int frac = (int)fabs((celsius - whole) * 10.0f);  // 1 цифра после точки
-  // ° может не быть в шрифте, тогда просто " C"
+  int whole = (int)celsius;                         // integer part
+  int frac = (int)fabs((celsius - whole) * 10.0f);  // 1 digit after the point
+  // the degree sign may be missing from the font, then just " C"
   sprintf(buf, "%d.%d°C", whole, frac);
-  // sprintf(buf, "%d.%d C", whole, frac); // если нет глифа °
+  // sprintf(buf, "%d.%d C", whole, frac); // if the degree glyph is missing
   lv_label_set_text(lbl_temp_val, buf);
 }
 
-// Подписи на вкладке отчёта — только значения (заголовки статичные).
+// Labels on the report tab - values only (the captions are static).
 void ui_set_tachometer(float tachometer) {
   if (!lbl_tachometer) return;
   float km = ((tachometer / (POLE_PAIRS * 2 * 3)) * WHEEL_CIRC_M) / 1000.0;
   char buf[48];
-  int whole = (int)km;                         // целая часть
-  int frac = (int)fabs((km - whole) * 10.0f);  // 1 цифра после точки
+  int whole = (int)km;                         // integer part
+  int frac = (int)fabs((km - whole) * 10.0f);  // 1 digit after the point
   sprintf(buf, "%d.%d km", whole, frac);
   lv_label_set_text(lbl_tachometer, buf);
 }
@@ -1125,7 +1130,7 @@ void ui_set_cost(float ils) {
   char buf[32];
   int whole = (int)ils;
   int frac = (int)fabs((ils - whole) * 10.0f);
-  // Шекель ₪ (U+20AA) отсутствует в Montserrat — пишем без символа валюты.
+  // The shekel sign (U+20AA) is missing from Montserrat - printed without a currency symbol.
   sprintf(buf, "%d.%d", whole, frac);
   lv_label_set_text(lbl_cost, buf);
 }
@@ -1138,18 +1143,18 @@ void ui_set_power(float watts) {
     power_ema += 0.25f * (watts - power_ema);
   }
 
-  // Пик — по СЫРОМУ значению (сглаживание срезает как раз то, что замеряем),
-  // тем же принципом, что и пиковые токи в ui_set_currents().
+  // The peak uses the RAW value (smoothing cuts off exactly what is being measured),
+  // the same principle as the peak currents in ui_set_currents().
   if (peak_measuring && watts > peak_power_w) peak_power_w = watts;
 
   if (arc_power) {
-    // Рекуперацию (минус) кольцом не показываем — только подписью.
+    // Regeneration (negative) is not shown by the ring, only by the label.
     int32_t v = (int32_t)(power_ema + (power_ema >= 0 ? 0.5f : -0.5f));
     if (v < 0) v = 0;
     if (v > POWER_MAX_W) v = POWER_MAX_W;
     lv_arc_set_value(arc_power, v);
-    // Кольцо всегда живое (даже во время замера), поэтому цвет — по текущей
-    // мощности: полное красное кольцо = вышли за POWER_ALERT_W.
+    // The ring is always live (even during a measurement), so its colour follows the
+    // current power: a full red ring means POWER_ALERT_W has been exceeded.
     lv_obj_set_style_arc_color(arc_power,
                                (power_ema > POWER_ALERT_W) ? lv_palette_main(LV_PALETTE_RED)
                                                            : COLOR_POWER,
@@ -1171,9 +1176,9 @@ void ui_set_currents(float motor_a, float input_a) {
     cur_input_ema += 0.25f * (input_a - cur_input_ema);
   }
 
-  // Пики ловим по СЫРЫМ значениям: сглаживание срезает как раз то, что мы
-  // пытаемся замерить. Отрицательные (рекуперация) игнорируем — нужен максимум
-  // подаваемого тока.
+  // Peaks are taken from the RAW values: smoothing cuts off exactly what we are trying
+  // to measure. Negative values (regeneration) are ignored - what matters is the maximum
+  // current delivered.
   if (peak_measuring) {
     if (motor_a > peak_motor_a) peak_motor_a = motor_a;
     if (input_a > peak_input_a) peak_input_a = input_a;
@@ -1182,7 +1187,7 @@ void ui_set_currents(float motor_a, float input_a) {
   ui_refresh_currents();
 }
 
-// ===== Ограничение скорости 25 км/ч =====
+// ===== 25 km/h speed limit =====
 bool ui_get_limit25(void) {
   return limit25_on;
 }
@@ -1196,30 +1201,31 @@ void ui_set_limit25(bool on) {
   ui_refresh_limit();
 }
 
-// ===== Замок =====
+// ===== Lock =====
 bool ui_get_lock(void) {
   return lock_on;
 }
 
-// Вызывается на старте с сохранённым в NVS состоянием
+// Called at boot with the state restored from NVS
 void ui_set_lock(bool on) {
   lock_on = on;
   ui_lock_reset_entry();
   ui_refresh_lock();
 }
 
-// ===== Режим диагностики =====
+// ===== Diagnostics mode =====
 bool ui_get_debug_enabled(void) {
   return debug_enabled;
 }
 
 void ui_set_debug_enabled(bool on) {
   debug_enabled = on;
-  ui_refresh_debug_btn();  // сама вкладка появится при ближайшей сборке UI
+  ui_refresh_debug_btn();  // the tab itself appears on the next UI build
 }
 
-// Имена кодов аварий VESC. Порядок = mc_fault_code из datatypes.h библиотеки
-// VescUart (сам заголовок сюда не тянем: ui.cpp собирается и PC-симулятором).
+// Names of the VESC fault codes. The order matches mc_fault_code from the VescUart
+// library's datatypes.h (that header is not pulled in here: ui.cpp is also compiled by
+// the PC simulator).
 static const char *const FAULT_NAMES[] = {
   "NONE", "OVER VOLTAGE", "UNDER VOLTAGE", "DRV", "ABS OVER CURRENT",
   "OVER TEMP FET", "OVER TEMP MOTOR", "GATE DRV OVER VOLT", "GATE DRV UNDER VOLT",
@@ -1231,8 +1237,8 @@ static const char *const FAULT_NAMES[] = {
 };
 #define FAULT_NAMES_N ((int)(sizeof(FAULT_NAMES) / sizeof(FAULT_NAMES[0])))
 
-// Последняя ненулевая авария с момента загрузки: код в телеметрии сам сбрасывается,
-// когда причина ушла, — без защёлки коротких аварий просто не увидеть.
+// The last non-zero fault since boot: the code in the telemetry clears itself once the
+// cause is gone, so without a latch short faults are simply never seen.
 static int last_fault_code = 0;
 
 static void ui_fault_name(char *buf, size_t n, int code) {
@@ -1242,7 +1248,7 @@ static void ui_fault_name(char *buf, size_t n, int code) {
 
 void ui_set_diag(int fault_code, float duty, float temp_motor, bool comm_ok) {
   if (fault_code != 0) last_fault_code = fault_code;
-  if (!lbl_diag_fault) return;  // вкладка диагностики не построена
+  if (!lbl_diag_fault) return;  // the diagnostics tab was not built
 
   char buf[32];
   ui_fault_name(buf, sizeof(buf), fault_code);
@@ -1274,21 +1280,20 @@ void ui_set_diag(int fault_code, float duty, float temp_motor, bool comm_ok) {
   }
 }
 
-// ===== Ток мотора (setCurrent) =====
-// Значение, подтверждённое кнопкой UPDATE. loop() обязан повторять его в VESC:
-// у контроллера таймаут команды ~1 с, одиночная посылка просто затухнет.
+// ===== Motor current (setCurrent) =====
+// The value confirmed with the UPDATE button. loop() must repeat it to the VESC: the
+// controller times commands out after ~1 s, so a single send would simply decay.
 float ui_get_current_applied(void) {
   return current_applied;
 }
 
-// Последняя показанная (сглаженная) скорость — по ней и решаем, давить ли лимит,
-// чтобы поведение совпадало с тем, что человек видит на спидометре.
+// The last displayed (smoothed) speed - the limit decision is based on it so the
+// behaviour matches what the rider sees on the speedometer.
 float ui_speed_kmh(void) {
   return speed_ema_init ? speed_ema : 0.0f;
 }
 
-// Обратное преобразование к erpm_to_kmh() с ТЕМИ ЖЕ константами, что у спидометра
-// (в utils.cpp kmh_to_erpm() считает по другим POLE_PAIRS/колесу — для лимита не годится).
+// The inverse of erpm_to_kmh() using THE SAME constants as the speedometer.
 float ui_kmh_to_erpm(float kmh) {
   return (kmh * 1000.0f / 60.0f / WHEEL_CIRC_M) * (float)POLE_PAIRS;
 }

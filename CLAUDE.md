@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project actually is
 
-An Arduino sketch for a **Waveshare ESP32-S3-Touch-LCD-1.69** board (ESP32-S3R8, 8 MB PSRAM) with a built-in **ST7789V2 240x280 SPI LCD** — driven in **portrait**, so the logical resolution is **240x280** — acting as a display/dashboard for a **Flipsky VESC** (electric vehicle motor controller). The ESP32 talks to the VESC over UART (`VescUart` library) and renders speed, battery %, voltage, MOSFET temperature, and trip/total odometer with **LVGL v8.3.9**. There is also scaffolding for **NimBLE** (configuring Wi-Fi credentials over BLE) and a **WS2812 NeoPixel** indicator, but those are not wired into `setup()`/`loop()` in [main/main.ino](main/main.ino) right now — the active code path is VESC → LVGL only.
+An Arduino sketch for a **Waveshare ESP32-S3-Touch-LCD-1.69** board (ESP32-S3R8, 8 MB PSRAM) with a built-in **ST7789V2 240x280 SPI LCD** — driven in **portrait**, so the logical resolution is **240x280** — acting as a display/dashboard for a **Flipsky VESC** (electric vehicle motor controller). The ESP32 talks to the VESC over UART (`VescUart` library) and renders speed, battery %, voltage, MOSFET temperature, and trip/total odometer with **LVGL v8.3.9**. The active code path is VESC → LVGL only; the old dormant BLE / Wi-Fi / NeoPixel scaffolding has been deleted, so there is no BLE, Wi-Fi or LED code in the sketch.
 
 The onboard CST816T touch **is** used (swipe between tabs). The IMU, RTC, buzzer and battery ADC are not; there is no onboard addressable LED on this board.
 
@@ -13,7 +13,7 @@ The onboard CST816T touch **is** used (swipe between tabs). The IMU, RTC, buzzer
 There is no `platformio.ini`, `Makefile`, or `arduino-cli.yaml` in the repo. The project is built and flashed via the **Arduino IDE** (or `arduino-cli`) targeting **ESP32S3 Dev Module** (esp32 core 3.x — `ledcAttach()` is used; Flash 16MB, OPI PSRAM).
 
 External configuration the user maintains outside the repo:
-- The Arduino libraries `VescUart`, `lvgl` (v8.3.9), `NimBLEDevice`, and `Adafruit_NeoPixel` must be installed in the IDE.
+- The Arduino libraries `VescUart` and `lvgl` (v8.3.9) must be installed in the IDE.
 - LVGL is configured via [configs/lv_conf.h](configs/lv_conf.h) — this file lives outside the sketch folder and must be discoverable on the LVGL include path (Arduino IDE: place at the libraries root next to the `lvgl` folder, or add the `configs/` directory to the include search path).
 - The sketch folder is [main/](main/) and the entry point is [main/main.ino](main/main.ino) — open that file in the IDE.
 
@@ -37,12 +37,10 @@ cmake --build simulator/build --target vesc_ui_shot && \
    - The tab count is **runtime** (`tab_count`, 5 or 6), not a `#define`; `TAB_MAX` only sizes the `dots[]` array. Adding a tab means bumping the `TAB_*` indices and `TAB_MAX` together.
    - LVGL 8.3 has no `lv_tabview_remove_tab()`, so toggling the diagnostics tab **rebuilds the whole UI**: `ui_debug_btn_cb()` schedules `ui_rebuild_async_cb()` via `lv_async_call()` (mandatory — you cannot delete the tree from a callback of a button inside it), which cleans `lv_layer_top()` + `lv_scr_act()` and calls `ui_build()` again. Because of that, `ui_build()` is **re-entrant**: it starts with `ui_reset_refs()` (all widget statics back to NULL) and every widget that mirrors persistent state must have its state restored at build time (`ui_set_limit25(limit25_on)`, `ui_refresh_lock()`, the `btn_peak` CHECKED restore) — plain "refresh" is not enough for a freshly created widget.
 
-**Threading (this matters):** [main/lvgl_driver.cpp](main/lvgl_driver.cpp) runs `lv_timer_handler()` in its own FreeRTOS task (`Lvgl_Start_Task()`, core 0, priority 2, 5–20 ms period) so rendering and swipe inertia don't depend on `loop()`. `loop()` (core 1) only polls the VESC every `VESC_POLL_INTERVAL_MS` and must wrap **every** `lv_*`/`ui_set_*` call in `Lvgl_Lock()`/`Lvgl_Unlock()` (recursive mutex) — LVGL is not thread-safe. Never add `delay()` to `loop()` for pacing; use the millis() guard that's already there. `Timer_Loop()` still exists for compatibility but must not be called when the task is running.
+**Threading (this matters):** [main/lvgl_driver.cpp](main/lvgl_driver.cpp) runs `lv_timer_handler()` in its own FreeRTOS task (`Lvgl_Start_Task()`, core 0, priority 2, 5–20 ms period) so rendering and swipe inertia don't depend on `loop()`. `loop()` (core 1) only polls the VESC every `VESC_POLL_INTERVAL_MS` and must wrap **every** `lv_*`/`ui_set_*` call in `Lvgl_Lock()`/`Lvgl_Unlock()` (recursive mutex) — LVGL is not thread-safe. Never add `delay()` to `loop()` for pacing; use the millis() guard that's already there.
 
 **VESC data flow:**
 `UART.getVescValues()` in `loop()` polls the VESC over `HardwareSerial(1)` on pins RX=3 / TX=2 at 115200 baud. The sketch reads `inpVoltage`, `tempMosfet`, `rpm`, `tachometer`, `tachometerAbs` and pushes them into the LVGL labels. eRPM ↔ km/h conversion uses `POLE_PAIRS` and `WHEEL_CIRC_M` defined at the top of [main/ui.cpp](main/ui.cpp) — these are mechanical constants for the user's specific vehicle and **must be re-checked** if changing motor or wheel.
-
-⚠️ Note: `POLE_PAIRS` is defined **twice** with different values — `15` in [main/ui.cpp](main/ui.cpp#L40) (used for display calculations) and `14` in [main/utils.cpp](main/utils.cpp#L5) (used by `kmh_to_erpm` only). They are not unified. If you touch either, decide whether to consolidate.
 
 **Speed limit (25 km/h) and lock share one packet.** [main/vesc_limit.cpp](main/vesc_limit.cpp) exposes a single `vesc_send_limits(Stream&, const VescLimits&)` that sends a raw `COMM_SET_MCCONF_TEMP`. That packet rewrites **all eight** limit fields at once (`l_current_min/max_scale`, `l_min/max_erpm`, `l_min/max_duty`, `l_watt_min/max`), so no feature may send it on its own — `loop()` folds every active regulator into one `VescLimits` and sends that. `store = 0`, so the change is RAM-only — hence the re-send every `LIMIT_REFRESH_MS` while anything is active (survives a VESC reboot).
 
@@ -57,7 +55,7 @@ An earlier implementation used `UART.setRPM()` while above the threshold and **d
 
 **Button (GPIO 0):** while held LOW, the loop calls `UART.setDuty(0.03f)` — a hardcoded test/throttle gesture, unrelated to the speed limit and to the current tab (suppressed while the lock is on).
 
-**BLE / Wi-Fi / LED:** [main/ble_service.cpp](main/ble_service.cpp), [main/wifi_service.cpp](main/wifi_service.cpp), [main/led.cpp](main/led.cpp) implement a "receive Wi-Fi credentials over BLE, then connect" flow with an (external) NeoPixel indicator on GPIO 17 — GPIO 8 is LCD_RST on this board. **None of these are called from `setup()`** — they're dormant. If a task asks to "enable BLE" or "turn on Wi-Fi", you'll need to wire `initBLE()` / `leds_init()` into `setup()` yourself.
+**No BLE / Wi-Fi / LED:** the radios are unused and there is no LED on the board. The former `ble_service` / `wifi_service` / `led` / `ui_globals` files (a dormant "receive Wi-Fi credentials over BLE" flow plus a WS2812 indicator) were removed. A task asking to "enable BLE" or "turn on Wi-Fi" means writing it from scratch, not un-commenting something.
 
 ## Conventions worth knowing
 

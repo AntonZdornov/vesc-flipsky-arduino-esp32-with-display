@@ -6,7 +6,7 @@
 // display Model: ST7789V2 (240x280), Waveshare ESP32-S3-Touch-LCD-1.69
 
 void SPI_Init() {
-  // MISO = -1: линия не разведена, SPI работает только на запись
+  // MISO = -1: the line is not routed, SPI is write-only
   SPI.begin(EXAMPLE_PIN_NUM_SCLK, EXAMPLE_PIN_NUM_MISO, EXAMPLE_PIN_NUM_MOSI);
 }
 
@@ -38,7 +38,7 @@ void LCD_WriteData_nbyte(uint8_t* SetData, uint8_t* ReadData, uint32_t Size) {
   SPI.beginTransaction(SPISettings(SPIFreq, MSBFIRST, SPI_MODE0));
   digitalWrite(EXAMPLE_PIN_NUM_LCD_CS, LOW);
   digitalWrite(EXAMPLE_PIN_NUM_LCD_DC, HIGH);
-  // ReadData == NULL — только запись, приёмный буфер не нужен
+  // ReadData == NULL - write only, no receive buffer needed
   SPI.transferBytes(SetData, ReadData, Size);
   digitalWrite(EXAMPLE_PIN_NUM_LCD_CS, HIGH);
   SPI.endTransaction();
@@ -58,7 +58,7 @@ static inline void LCD_WriteBytes(const uint8_t* data, uint32_t len) {
   digitalWrite(EXAMPLE_PIN_NUM_LCD_CS, LOW);
   digitalWrite(EXAMPLE_PIN_NUM_LCD_DC, HIGH);
 
-  // Пишем последовательно; максимально совместимо
+  // Write sequentially; maximally compatible
   while (len--) {
     SPI.transfer(*data++);
   }
@@ -67,7 +67,7 @@ static inline void LCD_WriteBytes(const uint8_t* data, uint32_t len) {
   SPI.endTransaction();
 }
 
-void LCD_FillScreen(uint16_t color) {  // убираем 'static' чтобы совпадало с заголовком
+void LCD_FillScreen(uint16_t color) {  // no 'static' here so it matches the header
     const uint16_t W = LCD_WIDTH;
     const uint16_t H = LCD_HEIGHT;
 
@@ -76,7 +76,7 @@ void LCD_FillScreen(uint16_t color) {  // убираем 'static' чтобы с�
 
     for (uint16_t y = 0; y < H; ++y) {
         LCD_SetCursor(0, y, W - 1, y);
-        LCD_WriteBytes((const uint8_t*)line, W * sizeof(uint16_t)); // правильная функция
+        LCD_WriteBytes((const uint8_t*)line, W * sizeof(uint16_t)); // the right function
     }
 }
 
@@ -92,9 +92,9 @@ void LCD_Init(void) {
   LCD_WriteCommand(0x11);
   delay(120);
   LCD_WriteCommand(0x36);
-  // Ориентация задаётся LCD_PORTRAIT в display.h (сейчас портрет, MADCTL 0x00).
-  // Если картинка перевёрнута на 180° — в портрете пробуй 0xC0 (MX|MY),
-  // в ландшафте — 0xA0 (MY|MV).
+  // Orientation is set by LCD_PORTRAIT in display.h (currently portrait, MADCTL 0x00).
+  // If the image comes out rotated by 180 degrees, try 0xC0 (MX|MY) in portrait
+  // and 0xA0 (MY|MV) in landscape.
   LCD_WriteData(LCD_MADCTL);
 
   LCD_WriteCommand(0x3A);
@@ -171,8 +171,8 @@ void LCD_Init(void) {
   LCD_WriteData(0x29);
   LCD_WriteData(0x32);
 
-  LCD_WriteCommand(0x21); // заменил инверсию чтобы убрать
-  // LCD_WriteCommand(0x20); // инверсия
+  LCD_WriteCommand(0x21); // swapped the inversion to get rid of it
+  // LCD_WriteCommand(0x20); // inversion
 
   LCD_WriteCommand(0x11);
   delay(120);
@@ -189,8 +189,8 @@ parameter :
     Yend  :   End uint16_t coordinatesen
 ******************************************************************************/
 static void LCD_WriteAddrRange(uint8_t cmd, uint16_t start, uint16_t end) {
-  // Смещение прибавляем ДО разбиения на байты: адрес доходит до 279+20 = 299,
-  // т.е. старший байт уже не нулевой.
+  // The offset is added BEFORE splitting into bytes: the address reaches 279+20 = 299,
+  // so the high byte is no longer zero.
   LCD_WriteCommand(cmd);
   LCD_WriteData(start >> 8);
   LCD_WriteData(start & 0xFF);
@@ -199,8 +199,8 @@ static void LCD_WriteAddrRange(uint8_t cmd, uint16_t start, uint16_t end) {
 }
 
 void LCD_SetCursor(uint16_t Xstart, uint16_t Ystart, uint16_t Xend, uint16_t Yend) {
-  // Offset_X/Offset_Y заданы в логических координатах текущей ориентации,
-  // поэтому маппинг прямой: X → CASET (0x2A), Y → RASET (0x2B).
+  // Offset_X/Offset_Y are given in the logical coordinates of the current orientation,
+  // so the mapping is direct: X -> CASET (0x2A), Y -> RASET (0x2B).
   LCD_WriteAddrRange(0x2A, Xstart + Offset_X, Xend + Offset_X);
   LCD_WriteAddrRange(0x2B, Ystart + Offset_Y, Yend + Offset_Y);
   LCD_WriteCommand(0x2C);
@@ -228,8 +228,8 @@ void LCD_addWindow(uint16_t Xstart, uint16_t Ystart, uint16_t Xend, uint16_t Yen
   uint16_t Show_Height = Yend - Ystart + 1;
   uint32_t numBytes = (uint32_t)Show_Width * Show_Height * sizeof(uint16_t);
   LCD_SetCursor(Xstart, Ystart, Xend, Yend);
-  // Приёмный буфер не выделяем (раньше был VLA на стеке — на буфере LVGL
-  // 280x240/20 это ~6.7 КБ и стек loopTask'а рвался).
+  // No receive buffer is allocated (there used to be a VLA on the stack - with an
+  // LVGL buffer of 280x240/20 that is ~6.7 KB and it blew the loopTask stack).
   LCD_WriteData_nbyte((uint8_t*)color, NULL, numBytes);
 }
 // backlight
